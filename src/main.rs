@@ -3,19 +3,22 @@ use crossterm;
 use tui::backend::CrosstermBackend;
 use tui::Terminal;
 
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-enum Event<I> {
-    Input(I),
-    Tick,
+enum Event {
+    Input(char),
+    Update,
 }
 
 fn main() -> Result<(), failure::Error> {
     let backend = CrosstermBackend::new();
     let mut terminal = Terminal::new(backend)?;
     terminal.hide_cursor()?;
+
+    let store = Arc::new(Mutex::new(storage::Store::new()));
+    let handle = store.clone();
 
     // Setup input handling
     let (tx, rx) = mpsc::channel();
@@ -43,22 +46,34 @@ fn main() -> Result<(), failure::Error> {
         thread::spawn(move || {
             let tx = tx.clone();
             loop {
-                tx.send(Event::Tick).unwrap();
+                tx.send(Event::Update).unwrap();
                 thread::sleep(Duration::from_millis(250));
             }
         });
     }
 
-    terminal.clear();
+    // Setup instrumentation beacon
+    thread::spawn(|| {
+        let subscriber = storage::InProcessStore::new(store);
+        tokio_trace::subscriber::with_default(subscriber, || {
+            let kind = tokio_trace_test::ApplicationKind::Server;
+            kind.emit();
+        });
+    });
 
+    terminal.clear()?;
     loop {
-        console::ui::draw(&mut terminal)?;
         match rx.recv()? {
             Event::Input(key) => match key {
                 'q' => break,
                 _ => {}
             },
-            Event::Tick => {}
+            Event::Update => {
+                let store = handle.lock().unwrap();
+                if store.updated() {
+                    console::ui::draw(&mut terminal, &store)?;
+                }
+            }
         }
     }
 

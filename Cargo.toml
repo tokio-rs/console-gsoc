@@ -9,6 +9,8 @@ edition = "2018"
 [dependencies]
 crossterm = "^0.9"
 failure = "0.1.5"
+tokio-trace = { git = "https://github.com/tokio-rs/tokio/" }
+tokio-trace-test = { path = "../tokio-trace-nursery/tokio-trace-test" }
 
 [dependencies.tui]
 version = "0.6"
