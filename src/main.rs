@@ -57,7 +57,10 @@ fn main() -> Result<(), failure::Error> {
         let subscriber = storage::InProcessStore::new(store);
         tokio_trace::subscriber::with_default(subscriber, || {
             let kind = tokio_trace_test::ApplicationKind::Server;
-            kind.emit();
+            loop {
+                thread::sleep(Duration::from_millis(2000));
+                kind.emit();
+            }
         });
     });
 
@@ -76,6 +79,6 @@ fn main() -> Result<(), failure::Error> {
             }
         }
     }
-
+    terminal.clear()?;
     Ok(())
 }
