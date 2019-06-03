@@ -6,6 +6,12 @@ use tokio_trace_core::{Field, Level};
 use std::collections::HashMap;
 use std::fmt::{Debug, Write};
 
+#[derive(Debug, Default)]
+pub struct ThreadStore {
+    pub lines: Vec<(Level, String)>,
+    pub name: Option<String>,
+}
+
 /// Modelled after `tokio_trace::Subscriber`
 ///
 /// Some methods differ in that they also take a thread id.
@@ -17,7 +23,7 @@ use std::fmt::{Debug, Write};
 #[derive(Debug)]
 pub struct Store {
     stacks: HashMap<ThreadId, Vec<span::Id>>,
-    pub lines: HashMap<ThreadId, Vec<(Level, String)>>,
+    pub threads: HashMap<ThreadId, ThreadStore>,
     spans: Vec<Span>,
     reusable: Vec<span::Id>,
     updated: bool,
@@ -27,11 +33,16 @@ impl Store {
     pub fn new() -> Store {
         Store {
             stacks: HashMap::new(),
-            lines: HashMap::new(),
+            threads: HashMap::new(),
             spans: Vec::new(),
             reusable: Vec::new(),
             updated: false,
         }
+    }
+
+    pub fn register_thread_name(&mut self, thread: ThreadId, name: String) {
+        let store = self.threads.entry(thread).or_default();
+        store.name = Some(name);
     }
 
     pub fn updated(&self) -> bool {
@@ -125,12 +136,14 @@ impl Store {
 
     pub(crate) fn event(&mut self, thread: ThreadId, event: &Event) {
         self.updated = true;
-        let lines = self.lines.entry(thread).or_insert(Vec::new());
+        let store = self.threads.entry(thread).or_default();
         let mut formatter = StringFormatter {
             buffer: String::new(),
         };
         event.record(&mut formatter);
-        lines.push((event.metadata().level().clone(), formatter.buffer));
+        store
+            .lines
+            .push((event.metadata().level().clone(), formatter.buffer));
     }
 }
 
