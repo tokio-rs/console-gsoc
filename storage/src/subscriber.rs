@@ -38,6 +38,23 @@ impl InProcessStore {
     pub fn new(store: Arc<Mutex<Store>>) -> InProcessStore {
         InProcessStore { store }
     }
+
+    pub fn get_thread_id(&self) -> ThreadId {
+        THREAD_ID_INIT.with(|init_guard| {
+            init_guard.call_once(|| {
+                THREAD_ID.with(|id| {
+                    // TODO: Maybe reuse thread ids? - We don't know when a thread is dead
+                    let new_id = THREAD_COUNTER.fetch_add(1, Ordering::Relaxed);
+                    if let Some(name) = thread::current().name() {
+                        let mut store = self.store.lock().unwrap();
+                        store.register_thread_name(ThreadId::new(new_id), name.to_string());
+                    }
+                    id.set(new_id);
+                })
+            });
+            THREAD_ID.with(|id| ThreadId::new(id.get()))
+        })
+    }
 }
 
 impl Subscriber for InProcessStore {
