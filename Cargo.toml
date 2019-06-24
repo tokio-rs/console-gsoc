@@ -10,7 +10,7 @@ edition = "2018"
 crossterm = "^0.9"
 failure = "0.1.5"
 tokio-trace = { git = "https://github.com/tokio-rs/tokio/" }
-tokio-trace-test = { path = "../tokio-trace-nursery/tokio-trace-test" }
+tokio-trace-test = { git = "https://github.com/MSleepyPanda/tokio-trace-nursery/tree/beacon" }
 
 [dependencies.tui]
 version = "0.6"
