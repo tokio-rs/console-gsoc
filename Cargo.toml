@@ -6,5 +6,17 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[dependencies]
+crossterm = "^0.9"
+failure = "0.1.5"
+tokio-trace = { git = "https://github.com/tokio-rs/tokio/" }
+tokio-trace-test = { git = "https://github.com/MSleepyPanda/tokio-trace-nursery/tree/beacon" }
+
+[dependencies.tui]
+version = "0.6"
+features = ["crossterm"]
+default-features = false
+
+
 [dependencies.storage]
 path = "./storage"

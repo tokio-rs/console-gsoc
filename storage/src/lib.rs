@@ -1,7 +1,6 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+
+mod store;
+mod subscriber;
+
+pub use subscriber::InProcessStore;
+pub use store::{Store, ThreadId};
