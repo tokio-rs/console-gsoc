@@ -148,26 +148,31 @@ impl App {
 
         self.thread_selector(&store, f, chunks[0]);
         if let Some(current_thread) = &self.current_thread.get() {
-            let logs = store
+            let lines = &store
                 .threads
                 .get(current_thread)
                 .expect("BUG: No logs for the thread")
-                .lines
-                .iter()
-                .map(|(level, text)| {
-                    Text::styled(
-                        text,
-                        match *level {
-                            Level::INFO => Style::default().fg(Color::White),
-                            Level::ERROR => Style::default().fg(Color::Red),
-                            Level::WARN => Style::default().fg(Color::LightRed),
-                            Level::TRACE => Style::default().fg(Color::Cyan),
-                            Level::DEBUG => Style::default().fg(Color::LightMagenta),
-                        },
-                    )
-                });
+                .lines;
+            let len = lines.len();
+            let logs = lines.iter().map(|(level, text)| {
+                Text::styled(
+                    text,
+                    match *level {
+                        Level::INFO => Style::default().fg(Color::White),
+                        Level::ERROR => Style::default().fg(Color::Red),
+                        Level::WARN => Style::default().fg(Color::LightRed),
+                        Level::TRACE => Style::default().fg(Color::Cyan),
+                        Level::DEBUG => Style::default().fg(Color::LightMagenta),
+                    },
+                )
+            });
             List::new(logs)
-                .block(Block::default().borders(Borders::ALL).title("Messages"))
+                .block(Block::default().borders(Borders::ALL).title(&format!(
+                    "Messages {}-{}/{} ",
+                    1,
+                    std::cmp::min((chunks[1].height - 2) as usize, len),
+                    len
+                )))
                 .render(f, chunks[1]);
         } else {
             let logs = vec![Text::raw("--- No Messages ---")].into_iter();
