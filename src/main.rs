@@ -7,8 +7,12 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use crossterm::{InputEvent, KeyEvent};
+
+use console::ui;
+
 enum Event {
-    Input(char),
+    Input(InputEvent),
     Update,
 }
 
@@ -27,20 +31,21 @@ fn main() -> Result<(), failure::Error> {
         thread::spawn(move || {
             let input = crossterm::input();
             loop {
-                match input.read_char() {
-                    Ok(key) => {
-                        if let Err(_) = tx.send(Event::Input(key)) {
-                            return;
-                        }
-                        if key == 'q' {
-                            return;
-                        }
+                let reader = input.read_sync();
+                for event in reader {
+                    let close = InputEvent::Keyboard(KeyEvent::Char('q')) == event;
+                    if let Err(_) = tx.send(Event::Input(event)) {
+                        return;
                     }
-                    Err(_) => {}
+                    if close {
+                        return;
+                    }
                 }
             }
         });
     }
+
+    // Setup 250ms tick rate
     {
         let tx = tx.clone();
         thread::spawn(move || {
@@ -52,31 +57,58 @@ fn main() -> Result<(), failure::Error> {
         });
     }
 
-    // Setup instrumentation beacon
-    thread::spawn(|| {
-        let subscriber = storage::InProcessStore::new(store);
-        tokio_trace::subscriber::with_default(subscriber, || {
-            let kind = tokio_trace_test::ApplicationKind::Server;
-            loop {
-                thread::sleep(Duration::from_millis(2000));
-                kind.emit();
-            }
-        });
-    });
+    // Setup instrumentation generation
+    // Two threads, to apps
+    {
+        let store = store.clone();
+        thread::Builder::new()
+            .name("Server".to_string())
+            .spawn(|| {
+                let subscriber = storage::InProcessStore::new(store);
+                tokio_trace::subscriber::with_default(subscriber, || {
+                    let kind = tokio_trace_test::ApplicationKind::Server;
+                    loop {
+                        thread::sleep(Duration::from_millis(2000));
+                        kind.emit();
+                    }
+                });
+            })?;
+    }
+    {
+        let store = store.clone();
+        thread::Builder::new()
+            .name("YakShave".to_string())
+            .spawn(|| {
+                let subscriber = storage::InProcessStore::new(store);
+                tokio_trace::subscriber::with_default(subscriber, || {
+                    thread::sleep(Duration::from_millis(1000));
+                    let kind = tokio_trace_test::ApplicationKind::YakShave;
+                    loop {
+                        thread::sleep(Duration::from_millis(2000));
+                        kind.emit();
+                    }
+                });
+            })?;
+    }
+
+    let mut app = ui::App::new(handle);
 
     terminal.clear()?;
     loop {
-        match rx.recv()? {
-            Event::Input(key) => match key {
-                'q' => break,
-                _ => {}
-            },
-            Event::Update => {
-                let store = handle.lock().unwrap();
-                if store.updated() {
-                    console::ui::draw(&mut terminal, &store)?;
+        let draw = match rx.recv()? {
+            Event::Input(event) => {
+                if let Some(redraw) = app.input(event) {
+                    redraw
+                } else {
+                    break;
                 }
             }
+            Event::Update => true,
+        };
+        if draw {
+            terminal.draw(|mut f| {
+                app.render_to(&mut f);
+            })?;
         }
     }
     terminal.clear()?;

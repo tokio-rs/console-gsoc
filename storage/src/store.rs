@@ -54,8 +54,8 @@ impl Store {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ThreadId(usize);
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq, Hash)]
+pub struct ThreadId(pub usize);
 
 impl ThreadId {
     pub(crate) fn new(id: usize) -> ThreadId {
@@ -82,7 +82,7 @@ impl Store {
         (id.into_u64() - 1) as usize
     }
 
-    pub(crate) fn new_span(&mut self, span: &Attributes) -> span::Id {
+    pub(crate) fn new_span(&mut self, _span: &Attributes) -> span::Id {
         if let Some(id) = self.reusable.pop() {
             id
         } else {
@@ -104,16 +104,16 @@ impl Store {
         span.ref_count -= 1;
         if span.ref_count == 0 {
             self.reusable.push(span_id.clone());
-            span.ref_count = 1;
+            span.clear();
         }
     }
     pub(crate) fn record_follows_from(&mut self, span_id: &span::Id, follows: &span::Id) {
         self.updated = true;
-        let mut span = &mut self.spans[Store::id_to_index(span_id)];
+        let span = &mut self.spans[Store::id_to_index(span_id)];
         span.follows.push(follows.clone());
     }
 
-    pub(crate) fn record(&mut self, thread: ThreadId, span_id: &span::Id, values: &Record) {
+    pub(crate) fn record(&mut self, _thread: ThreadId, _span_id: &span::Id, _values: &Record) {
         self.updated = true;
         unimplemented!("Record")
     }
@@ -123,7 +123,7 @@ impl Store {
             .or_insert(Vec::new())
             .push(span_id.clone());
     }
-    pub(crate) fn exit(&mut self, thread: ThreadId, span_id: &span::Id) {
+    pub(crate) fn exit(&mut self, thread: ThreadId, _span_id: &span::Id) {
         let stack = self.stacks.entry(thread).or_insert(Vec::new());
         stack.pop().expect("Popped an already empty thread");
         // Prevent oom caused by many short lived threads that don't contain a span anymore
