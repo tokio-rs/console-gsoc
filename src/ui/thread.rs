@@ -56,7 +56,7 @@ impl ThreadSelector {
                 let new_id = Some(*id);
                 let rerender = self.current_thread != new_id;
                 self.current_thread = new_id;
-                return rerender
+                return rerender;
             }
         }
         false
@@ -73,7 +73,7 @@ impl ThreadSelector {
                 let new_id = Some(*id);
                 let rerender = self.current_thread != new_id;
                 self.current_thread = new_id;
-                return rerender
+                return rerender;
             }
         }
         false

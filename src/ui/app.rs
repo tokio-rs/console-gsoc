@@ -1,10 +1,10 @@
-use storage::{Store, ThreadId};
+use storage::Store;
 
 use tokio_trace::Level;
 use tui::backend::CrosstermBackend;
-use tui::layout::{Constraint, Direction, Layout, Rect};
-use tui::style::{Color, Modifier, Style};
-use tui::widgets::{Block, Borders, List, SelectableList, Text, Widget};
+use tui::layout::{Constraint, Direction, Layout};
+use tui::style::{Color, Style};
+use tui::widgets::{Block, Borders, List, Text, Widget};
 use tui::Frame;
 
 use crossterm::{InputEvent, KeyEvent};
