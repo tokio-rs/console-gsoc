@@ -103,7 +103,7 @@ fn main() -> Result<(), failure::Error> {
                     break;
                 }
             }
-            Event::Update => true,
+            Event::Update => app.update(),
         };
         if draw {
             terminal.draw(|mut f| {
