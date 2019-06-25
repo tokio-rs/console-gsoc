@@ -9,7 +9,7 @@ resources:
     - repository: templates
       type: github
       name: xoac/rust-azure-pipelines
-      ref: tree/b1d72c892505dc24c74ddca5b2bc5255e048d698
+      ref: ref/commit/b1d72c892505dc24c74ddca5b2bc5255e048d698
       endpoint: PipelinesTemplates
 
 jobs:
