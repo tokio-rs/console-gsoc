@@ -8,6 +8,7 @@ use tui::Frame;
 pub struct ThreadSelector {
     current_thread: Option<ThreadId>,
     threads: Vec<(ThreadId, Option<String>)>,
+    focused: bool,
 }
 
 impl ThreadSelector {
@@ -15,11 +16,20 @@ impl ThreadSelector {
         ThreadSelector {
             current_thread: None,
             threads: Vec::new(),
+            focused: true,
         }
     }
 
     pub(crate) fn current_thread(&self) -> Option<ThreadId> {
         self.current_thread
+    }
+
+    pub(crate) fn current_thread_active(&self) -> Option<ThreadId> {
+        if self.focused {
+            self.current_thread
+        } else {
+            None
+        }
     }
 
     pub(crate) fn update(&mut self, store: &Store) -> bool {
@@ -42,6 +52,12 @@ impl ThreadSelector {
                 }
             }
         }
+        rerender
+    }
+
+    pub(crate) fn set_focused(&mut self, focused: bool) -> bool {
+        let rerender = self.focused != focused;
+        self.focused = focused;
         rerender
     }
 
@@ -81,7 +97,7 @@ impl ThreadSelector {
 
     pub(crate) fn render_to(&self, f: &mut Frame<CrosstermBackend>, r: Rect) {
         let index =
-            self.current_thread.and_then(|current_id| {
+            self.current_thread_active().and_then(|current_id| {
                 self.threads.iter().enumerate().find_map(|(i, (id, _))| {
                     if current_id == *id {
                         Some(i)
@@ -98,7 +114,12 @@ impl ThreadSelector {
                     .iter()
                     .map(|(key, name)| {
                         format!(
-                            "{} - {}",
+                            "{}{} - {}",
+                            // FIXME: Remove this when we render based on a paragraph
+                            //
+                            // If something is highlighted, tui somehow inserts a leading space
+                            // We just insert one ourself, to make up when the widget is inactvive
+                            if self.focused { "" } else { " " },
                             key.0,
                             if let Some(name) = name { name } else { "" }
                         )
