@@ -1,7 +1,7 @@
-use tokio_trace_core::field::Visit;
-use tokio_trace_core::span::{self, Attributes, Record};
-use tokio_trace_core::Event;
-use tokio_trace_core::{Field, Level};
+use tracing_core::field::Visit;
+use tracing_core::span::{self, Attributes, Record};
+use tracing_core::Event;
+use tracing_core::{Field, Level};
 
 use std::collections::HashMap;
 use std::fmt::{Debug, Write};
