@@ -65,8 +65,8 @@ fn main() -> Result<(), failure::Error> {
             .name("Server".to_string())
             .spawn(|| {
                 let subscriber = storage::InProcessStore::new(store);
-                tokio_trace::subscriber::with_default(subscriber, || {
-                    let kind = tokio_trace_test::ApplicationKind::Server;
+                tracing::subscriber::with_default(subscriber, || {
+                    let kind = tracing_test::ApplicationKind::Server;
                     loop {
                         thread::sleep(Duration::from_millis(2000));
                         kind.emit();
@@ -80,9 +80,9 @@ fn main() -> Result<(), failure::Error> {
             .name("YakShave".to_string())
             .spawn(|| {
                 let subscriber = storage::InProcessStore::new(store);
-                tokio_trace::subscriber::with_default(subscriber, || {
+                tracing::subscriber::with_default(subscriber, || {
                     thread::sleep(Duration::from_millis(1000));
-                    let kind = tokio_trace_test::ApplicationKind::YakShave;
+                    let kind = tracing_test::ApplicationKind::YakShave;
                     loop {
                         thread::sleep(Duration::from_millis(2000));
                         kind.emit();

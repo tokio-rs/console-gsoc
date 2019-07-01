@@ -1,6 +1,6 @@
 use crate::store::{Store, ThreadId};
-use tokio_trace_core::span::{Attributes, Id, Record};
-use tokio_trace_core::{Event, Metadata, Subscriber};
+use tracing_core::span::{Attributes, Id, Record};
+use tracing_core::{Event, Metadata, Subscriber};
 
 use std::cell::Cell;
 use std::sync::atomic::{AtomicUsize, Ordering};
