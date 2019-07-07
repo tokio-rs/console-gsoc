@@ -1,7 +1,7 @@
 use storage::Store;
 
 use tui::backend::CrosstermBackend;
-use tui::layout::{Constraint, Direction, Layout, Rect, Alignment};
+use tui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use tui::widgets::{Paragraph, Text, Widget};
 use tui::Frame;
 

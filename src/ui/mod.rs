@@ -32,6 +32,7 @@ pub(crate) trait Hitbox {
 
 impl Hitbox for Rect {
     fn hit(&self, x: u16, y: u16) -> bool {
-        (self.x..(self.x + self.width)).contains(&x) && (self.y..(self.y + self.height)).contains(&y)
+        (self.x..(self.x + self.width)).contains(&x)
+            && (self.y..(self.y + self.height)).contains(&y)
     }
 }
