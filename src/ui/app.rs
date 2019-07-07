@@ -1,14 +1,15 @@
 use storage::Store;
 
 use tui::backend::CrosstermBackend;
-use tui::layout::{Constraint, Direction, Layout};
+use tui::layout::{Constraint, Direction, Layout, Rect, Alignment};
+use tui::widgets::{Paragraph, Text, Widget};
 use tui::Frame;
 
-use crossterm::{InputEvent, KeyEvent};
+use crossterm::{InputEvent, KeyEvent, MouseEvent};
 
-use crate::ui::EventList;
-use crate::ui::ThreadSelector;
+use crate::ui::{EventList, Hitbox, Input, ThreadSelector};
 
+use std::cell::Cell;
 use std::sync::{Arc, Mutex};
 
 #[derive(PartialEq)]
@@ -23,6 +24,8 @@ pub struct App {
 
     event_list: EventList,
     thread_selector: ThreadSelector,
+
+    rect: Cell<Option<(Rect, Rect)>>,
 }
 
 impl App {
@@ -33,6 +36,8 @@ impl App {
 
             event_list: EventList::new(),
             thread_selector: ThreadSelector::new(),
+
+            rect: Cell::new(None),
         }
     }
 
@@ -65,7 +70,7 @@ impl App {
         }
     }
 
-    fn on_left(&mut self) -> bool {
+    fn focus_thread(&mut self) -> bool {
         let rerender = self.focus != Focus::ThreadSelector;
         self.focus = Focus::ThreadSelector;
         self.thread_selector.set_focused(true);
@@ -73,12 +78,20 @@ impl App {
         rerender
     }
 
-    fn on_right(&mut self) -> bool {
+    fn focus_event(&mut self) -> bool {
         let rerender = self.focus != Focus::Events;
         self.focus = Focus::Events;
         self.thread_selector.set_focused(false);
         self.event_list.set_focused(true);
         rerender
+    }
+
+    fn on_left(&mut self) -> bool {
+        self.focus_thread()
+    }
+
+    fn on_right(&mut self) -> bool {
+        self.focus_event()
     }
 
     /// Returns if the scene has to be redrawn
@@ -92,19 +105,49 @@ impl App {
                 KeyEvent::Right => self.on_right(),
                 _ => false,
             },
+            InputEvent::Mouse(event) => match event {
+                MouseEvent::Release(x, y) => {
+                    let (thread_rect, event_rect) = self.rect.get().unwrap_or_default();
+                    if thread_rect.hit(x, y) {
+                        let rerender = self.focus_thread();
+                        self.thread_selector.on_click(x, y);
+                        rerender
+                    } else if event_rect.hit(x, y) {
+                        let rerender = self.focus_event();
+                        self.event_list.on_click(x, y);
+                        rerender
+                    } else {
+                        panic!("Event was wrongly routed")
+                    }
+                }
+                _ => false,
+            },
             _ => false,
         };
         Some(redraw)
     }
 
     pub fn render_to(&self, f: &mut Frame<CrosstermBackend>) {
+        let mut rect = f.size();
+        let mut legend_rect = rect;
+        // Reserve space for legend
+        rect.height -= 1;
+        legend_rect.y += legend_rect.height - 1;
+        legend_rect.height = 1;
+
         let chunks = Layout::default()
             .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
             .direction(Direction::Horizontal)
-            .split(f.size());
+            .split(rect);
 
         self.thread_selector.render_to(f, chunks[0]);
         self.event_list
             .render_to(f, chunks[1], self.thread_selector.current_thread());
+        Paragraph::new([Text::raw(" q: close, ← → ↑ ↓ click: navigate")].iter())
+            .render(f, legend_rect);
+        Paragraph::new([Text::raw("prerelease version ")].iter())
+            .alignment(Alignment::Right)
+            .render(f, legend_rect);
+        self.rect.set(Some((chunks[0], chunks[1])));
     }
 }
