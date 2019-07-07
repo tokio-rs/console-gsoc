@@ -1,7 +1,7 @@
 use storage::{Store, ThreadId};
 
+use crate::ui::{Hitbox, Input};
 use tracing::Level;
-use crate::ui::{Input, Hitbox};
 
 use tui::backend::CrosstermBackend;
 use tui::layout::Rect;
@@ -73,7 +73,7 @@ impl EventList {
     /// the selection has "space" to move without adjusting
     fn adjust_window_to_selection(&mut self) -> bool {
         // Calc the largest index that will be still in frame
-        let rowcount = self.rect.get().unwrap_or_default().height  as usize - 2;
+        let rowcount = self.rect.get().unwrap_or_default().height as usize - 2;
         let upper_limit = self.offset + rowcount;
 
         if self.selection < self.offset {
@@ -121,7 +121,7 @@ impl EventList {
     ) {
         self.rect.set(Some(r));
         // - 2: Upper and lower border of window
-        let rowcount = r.height  as usize - 2;
+        let rowcount = r.height as usize - 2;
 
         if let Some(current_thread) = current_thread {
             let (border_color, title_color) = self.border_color();
