@@ -8,6 +8,7 @@ use std::thread;
 use std::time::Duration;
 
 use crossterm::{InputEvent, KeyEvent};
+use crossterm::{InputEvent, KeyEvent, RawScreen};
 
 use console::ui;
 
@@ -18,6 +19,7 @@ enum Event {
 
 fn main() -> Result<(), failure::Error> {
     let backend = CrosstermBackend::new();
+    RawScreen::into_raw_mode()?.disable_drop();
     let mut terminal = Terminal::new(backend)?;
     terminal.hide_cursor()?;
 
