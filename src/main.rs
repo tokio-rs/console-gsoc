@@ -7,7 +7,6 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crossterm::{InputEvent, KeyEvent};
 use crossterm::{InputEvent, KeyEvent, RawScreen};
 
 use console::ui;
