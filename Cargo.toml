@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 crossterm = "^0.9"
+crossbeam-channel = "0.3"
 failure = "0.1.5"
 tracing = "0.1"
 tracing-test = { git = "https://github.com/MSleepyPanda/tokio-trace-nursery", branch="beacon" }

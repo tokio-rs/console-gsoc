@@ -1,13 +1,17 @@
+#![deny(unused_must_use)]
+
 use crossterm;
 
 use tui::backend::CrosstermBackend;
 use tui::Terminal;
 
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use crossterm::{InputEvent, KeyEvent};
+
+use crossbeam_channel::unbounded;
 
 use console::ui;
 
@@ -25,7 +29,7 @@ fn main() -> Result<(), failure::Error> {
     let handle = store.clone();
 
     // Setup input handling
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = unbounded();
     {
         let tx = tx.clone();
         thread::spawn(move || {
@@ -67,7 +71,7 @@ fn main() -> Result<(), failure::Error> {
                 let subscriber = storage::InProcessStore::new(store);
                 tracing::subscriber::with_default(subscriber, || {
                     let kind = tracing_test::ApplicationKind::Server;
-                    loop {
+                    for _ in 0..5 {
                         thread::sleep(Duration::from_millis(2000));
                         kind.emit();
                     }
@@ -83,7 +87,7 @@ fn main() -> Result<(), failure::Error> {
                 tracing::subscriber::with_default(subscriber, || {
                     thread::sleep(Duration::from_millis(1000));
                     let kind = tracing_test::ApplicationKind::YakShave;
-                    loop {
+                    for _ in 0..5 {
                         thread::sleep(Duration::from_millis(2000));
                         kind.emit();
                     }

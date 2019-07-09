@@ -127,7 +127,11 @@ impl ThreadSelector {
                     .collect::<Vec<String>>(),
             )
             .select(index)
-            .block(Block::default().borders(Borders::ALL).title("Threads"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Instrumented threads"),
+            )
             .render(f, r);
     }
 }

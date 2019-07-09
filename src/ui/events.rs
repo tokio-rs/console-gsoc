@@ -145,7 +145,7 @@ impl EventList {
         current_thread: Option<ThreadId>,
     ) {
         // - 2: Upper and lower border of window
-        self.rowcount.set(r.height as usize - 2);
+        self.rowcount.set((r.height as usize).saturating_sub(2));
 
         if let Some(current_thread) = current_thread {
             SelectableList::default()
