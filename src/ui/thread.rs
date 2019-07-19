@@ -35,19 +35,19 @@ impl ThreadSelector {
         let mut threads = store
             .threads
             .iter()
-            .map(|(key, store)| (*key, store.name.clone()))
+            .map(|(&key, store)| (key, store.name.clone()))
             .collect::<Vec<(ThreadId, Option<String>)>>();
-        threads.sort_by_key(|(id, _)| *id);
+        threads.sort_by_key(|&(id, _)| id);
         let rerender = self.threads == threads;
         self.threads = threads;
         if self.current_thread.is_none() {
             if self.threads.len() == 1 {
                 // There is at least one element
-                let thread_id = self.threads.iter().map(|(id, _)| id).next().unwrap();
-                self.current_thread = Some(*thread_id);
+                let thread_id = self.threads.iter().map(|&(id, _)| id).next().unwrap();
+                self.current_thread = Some(thread_id);
             } else {
-                if let Some(thread_id) = self.threads.iter().map(|(id, _)| id).min() {
-                    self.current_thread = Some(*thread_id);
+                if let Some(&thread_id) = self.threads.iter().map(|(id, _)| id).min() {
+                    self.current_thread = Some(thread_id);
                 }
             }
         }
@@ -59,10 +59,9 @@ impl ThreadSelector {
             let current_index = self
                 .threads
                 .iter()
-                .position(|(id, _)| current_id == *id)
+                .position(|&(id, _)| current_id == id)
                 .expect("BUG: Current thread id not in list");
-            if let Some((id, _)) = self.threads.get(current_index.saturating_sub(1)) {
-                let id = *id;
+            if let Some(&(id, _)) = self.threads.get(current_index.saturating_sub(1)) {
                 return self.select(id);
             }
         }
@@ -74,10 +73,9 @@ impl ThreadSelector {
             let current_index = self
                 .threads
                 .iter()
-                .position(|(id, _)| current_id == *id)
+                .position(|&(id, _)| current_id == id)
                 .expect("BUG: Current thread id not in list");
-            if let Some((id, _)) = self.threads.get(current_index.saturating_add(1)) {
-                let id = *id;
+            if let Some(&(id, _)) = self.threads.get(current_index.saturating_add(1)) {
                 return self.select(id);
             }
         }
@@ -89,8 +87,8 @@ impl ThreadSelector {
         self.rect.set(Some(r));
         let index =
             self.current_thread().and_then(|current_id| {
-                self.threads.iter().enumerate().find_map(|(i, (id, _))| {
-                    if current_id == *id {
+                self.threads.iter().enumerate().find_map(|(i, &(id, _))| {
+                    if current_id == id {
                         Some(i)
                     } else {
                         None
@@ -150,8 +148,7 @@ impl Input for ThreadSelector {
             return false;
         }
 
-        if let Some((id, _)) = self.threads.get((y - rect.y - 1) as usize) {
-            let id = *id;
+        if let Some(&(id, _)) = self.threads.get((y - rect.y - 1) as usize) {
             self.select(id)
         } else {
             false
