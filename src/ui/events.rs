@@ -162,7 +162,7 @@ impl EventList {
                     .skip(self.offset)
                     .take(rowcount)
                     .enumerate()
-                    .map(style_event)
+                    .map(|(i, e)| self.style_event(i, e))
                     .flatten()
                     .collect::<Vec<Text<'_>>>()
                     .iter(),
