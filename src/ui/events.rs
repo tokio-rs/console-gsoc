@@ -1,4 +1,4 @@
-use storage::{Store, ThreadId};
+use storage::{EventEntry, Store, ThreadId};
 
 use crate::ui::{Hitbox, Input};
 use tracing::Level;
@@ -13,7 +13,7 @@ use std::cell::Cell;
 
 pub struct EventList {
     /// Cached rows, gets populated by `EventList::update`
-    logs: Vec<(Level, String)>,
+    logs: Vec<EventEntry>,
     /// Index into logs vec, indicates which row the user selected
     selection: usize,
     /// How far the frame is offset by scrolling
@@ -113,6 +113,25 @@ impl EventList {
         self.adjust_window_to_selection() || rerender
     }
 
+    fn style_event(&self, i: usize, entry: &EventEntry) -> Vec<Text<'_>> {
+        let level = match *entry.level() {
+            Level::INFO => Text::styled(" INFO ", Style::default().fg(Color::White)),
+            Level::DEBUG => Text::styled("DEBUG ", Style::default().fg(Color::LightCyan)),
+            Level::ERROR => Text::styled("ERROR ", Style::default().fg(Color::Red)),
+            Level::TRACE => Text::styled("TRACE ", Style::default().fg(Color::Green)),
+            Level::WARN => Text::styled(" WARN ", Style::default().fg(Color::Yellow)),
+        };
+        let text = format!("{}\n", entry.display());
+        if i == self.selection - self.offset {
+            vec![
+                level,
+                Text::styled(text, Style::default().modifier(Modifier::BOLD)),
+            ]
+        } else {
+            vec![level, Text::raw(text)]
+        }
+    }
+
     pub(crate) fn render_to(
         &self,
         f: &mut Frame<CrosstermBackend>,
@@ -125,25 +144,6 @@ impl EventList {
 
         if let Some(current_thread) = current_thread {
             let (border_color, title_color) = self.border_color();
-            let style_event = |(i, (level, text)): (usize, &(Level, String))| {
-                let level = match *level {
-                    Level::INFO => Text::styled(" INFO ", Style::default().fg(Color::White)),
-                    Level::DEBUG => Text::styled("DEBUG ", Style::default().fg(Color::LightCyan)),
-                    Level::ERROR => Text::styled("ERROR ", Style::default().fg(Color::Red)),
-                    Level::TRACE => Text::styled("TRACE ", Style::default().fg(Color::Green)),
-                    Level::WARN => Text::styled(" WARN ", Style::default().fg(Color::Yellow)),
-                };
-                let text = format!("{}\n", text);
-                if i == self.selection - self.offset {
-                    vec![
-                        level,
-                        Text::styled(text, Style::default().modifier(Modifier::BOLD)),
-                    ]
-                    .into_iter()
-                } else {
-                    vec![level, Text::raw(text)].into_iter()
-                }
-            };
             let block_title = format!(
                 "Events(Thread {}{}) {}-{}/{}",
                 current_thread.0,

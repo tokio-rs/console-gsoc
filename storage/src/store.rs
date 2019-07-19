@@ -8,8 +8,24 @@ use std::fmt::{Debug, Write};
 
 #[derive(Debug, Default)]
 pub struct ThreadStore {
-    pub lines: Vec<(Level, String)>,
+    pub lines: Vec<EventEntry>,
     pub name: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EventEntry {
+    level: Level,
+    collected_fields: String,
+}
+
+impl EventEntry {
+    pub fn level(&self) -> &Level {
+        &self.level
+    }
+
+    pub fn display(&self) -> &str {
+        &self.collected_fields
+    }
 }
 
 /// Modelled after `tokio_trace::Subscriber`
@@ -141,9 +157,10 @@ impl Store {
             buffer: String::new(),
         };
         event.record(&mut formatter);
-        store
-            .lines
-            .push((event.metadata().level().clone(), formatter.buffer));
+        store.lines.push(EventEntry {
+            level: event.metadata().level().clone(),
+            collected_fields: formatter.buffer,
+        });
     }
 }
 
