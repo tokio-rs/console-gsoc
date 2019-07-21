@@ -1,15 +1,15 @@
-use storage::{EventEntry, Store, ThreadId};
+use crate::storage::*;
 
 use crate::ui::{Hitbox, Input};
-use tracing::Level;
 
 use tui::backend::CrosstermBackend;
 use tui::layout::Rect;
 use tui::style::{Color, Modifier, Style};
-use tui::widgets::{Block, Borders, List, Paragraph, Text, Widget};
+use tui::widgets::{Block, Borders, Paragraph, Text, Widget};
 use tui::Frame;
 
 use std::cell::Cell;
+use std::fmt::Write;
 
 pub struct EventList {
     /// Cached rows, gets populated by `EventList::update`
@@ -20,9 +20,6 @@ pub struct EventList {
     offset: usize,
 
     focused: bool,
-
-    current_thread: Option<ThreadId>,
-    thread_name: Option<String>,
     rect: Cell<Option<Rect>>,
 }
 
@@ -31,8 +28,6 @@ impl EventList {
         EventList {
             focused: false,
             logs: Vec::new(),
-            current_thread: None,
-            thread_name: None,
 
             selection: 0,
             offset: 0,
@@ -40,27 +35,8 @@ impl EventList {
         }
     }
 
-    pub(crate) fn update(&mut self, store: &Store, current_thread: Option<ThreadId>) -> bool {
-        self.current_thread = current_thread;
-        let current_thread = if let Some(current_thread) = current_thread {
-            let name = store
-                .threads
-                .get(&current_thread)
-                .expect("BUG: Invalid ThreadId created")
-                .name
-                .clone();
-            self.thread_name = name;
-            current_thread
-        } else {
-            return false;
-        };
-
-        let store = store
-            .threads
-            .get(&current_thread)
-            .expect("BUG: No logs for the thread");
-        let lines = &store.lines;
-        let logs = lines.clone();
+    pub(crate) fn update(&mut self, store: &Store) -> bool {
+        let logs = store.events().iter().cloned().collect();
         let rerender = self.logs != logs;
         self.logs = logs;
         rerender
@@ -114,14 +90,36 @@ impl EventList {
     }
 
     fn style_event(&self, i: usize, entry: &EventEntry) -> Vec<Text<'_>> {
-        let level = match *entry.level() {
-            Level::INFO => Text::styled(" INFO ", Style::default().fg(Color::White)),
-            Level::DEBUG => Text::styled("DEBUG ", Style::default().fg(Color::LightCyan)),
-            Level::ERROR => Text::styled("ERROR ", Style::default().fg(Color::Red)),
-            Level::TRACE => Text::styled("TRACE ", Style::default().fg(Color::Green)),
-            Level::WARN => Text::styled(" WARN ", Style::default().fg(Color::Yellow)),
+        let level = match entry.level() {
+            None => Text::styled(" NONE ", Style::default().fg(Color::White)),
+            Some(Level::Info) => Text::styled(" INFO ", Style::default().fg(Color::White)),
+            Some(Level::Debug) => Text::styled("DEBUG ", Style::default().fg(Color::LightCyan)),
+            Some(Level::Error) => Text::styled("ERROR ", Style::default().fg(Color::Red)),
+            Some(Level::Trace) => Text::styled("TRACE ", Style::default().fg(Color::Green)),
+            Some(Level::Warn) => Text::styled(" WARN ", Style::default().fg(Color::Yellow)),
         };
-        let text = format!("{}\n", entry.display());
+        let mut text = String::new();
+        let mut first = true;
+        for value in &entry.event.values {
+            if first {
+                first = false;
+            } else {
+                text.push_str(", ");
+            }
+            if let Some(field) = &value.field {
+                write!(text, r#"{}("#, field.name).unwrap();
+                match &value.value {
+                    Some(value::Value::Signed(i)) => write!(text, "{}", i).unwrap(),
+                    Some(value::Value::Unsigned(u)) => write!(text, "{}", u).unwrap(),
+                    Some(value::Value::Boolean(b)) => write!(text, "{}", b).unwrap(),
+                    Some(value::Value::Str(s)) => write!(text, "{}", s).unwrap(),
+                    Some(value::Value::Debug(d)) => write!(text, "{}", d.debug).unwrap(),
+                    None => {}
+                }
+                text.push_str(r#"")"#);
+            }
+        }
+        text.push('\n');
         if i == self.selection - self.offset {
             vec![
                 level,
@@ -132,55 +130,37 @@ impl EventList {
         }
     }
 
-    pub(crate) fn render_to(
-        &self,
-        f: &mut Frame<CrosstermBackend>,
-        r: Rect,
-        current_thread: Option<ThreadId>,
-    ) {
+    pub(crate) fn render_to(&self, f: &mut Frame<CrosstermBackend>, r: Rect) {
         self.rect.set(Some(r));
         // - 2: Upper and lower border of window
         let rowcount = r.height as usize - 2;
 
-        if let Some(current_thread) = current_thread {
-            let (border_color, title_color) = self.border_color();
-            let block_title = format!(
-                "Events(Thread {}{}) {}-{}/{}",
-                current_thread.0,
-                if let Some(name) = &self.thread_name {
-                    format!(r#": "{}""#, name)
-                } else {
-                    "".to_string()
-                },
-                1 + self.offset,
-                self.offset + std::cmp::min(rowcount, self.logs.len()),
-                self.logs.len(),
-            );
-            Paragraph::new(
-                self.logs
-                    .iter()
-                    .skip(self.offset)
-                    .take(rowcount)
-                    .enumerate()
-                    .map(|(i, e)| self.style_event(i, e))
-                    .flatten()
-                    .collect::<Vec<Text<'_>>>()
-                    .iter(),
-            )
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(border_color))
-                    .title(&block_title)
-                    .title_style(Style::default().fg(title_color)),
-            )
-            .render(f, r);
-        } else {
-            let logs = vec![Text::raw("--- No Messages ---")].into_iter();
-            List::new(logs)
-                .block(Block::default().borders(Borders::ALL).title("Messages"))
-                .render(f, r);
-        }
+        let (border_color, title_color) = self.border_color();
+        let block_title = format!(
+            "Events {}-{}/{}",
+            1 + self.offset,
+            self.offset + std::cmp::min(rowcount, self.logs.len()),
+            self.logs.len(),
+        );
+        Paragraph::new(
+            self.logs
+                .iter()
+                .skip(self.offset)
+                .take(rowcount)
+                .enumerate()
+                .map(|(i, e)| self.style_event(i, e))
+                .flatten()
+                .collect::<Vec<Text<'_>>>()
+                .iter(),
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(border_color))
+                .title(&block_title)
+                .title_style(Style::default().fg(title_color)),
+        )
+        .render(f, r);
     }
 }
 
