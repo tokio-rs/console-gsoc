@@ -1,55 +1,122 @@
-use storage::Store;
+use crate::storage::StoreHandle;
 
 use tui::backend::CrosstermBackend;
-use tui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use tui::layout::{Alignment, Rect};
 use tui::widgets::{Paragraph, Text, Widget};
 use tui::Frame;
+use tui::Terminal;
 
-use crossterm::{InputEvent, KeyEvent, MouseEvent};
+use crossterm::{InputEvent, KeyEvent, MouseEvent, RawScreen};
 
-use crate::ui::{EventList, Hitbox, Input, ThreadSelector};
+use crate::ui::{EventList, Hitbox, Input};
 
 use std::cell::Cell;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 #[derive(PartialEq)]
 enum Focus {
-    ThreadSelector,
     Events,
 }
 
+enum Event {
+    Input(InputEvent),
+    Update,
+}
+
+fn setup_input_handling() -> mpsc::Receiver<Event> {
+    // Setup input handling
+    let (tx, rx) = mpsc::channel();
+    {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            let input = crossterm::input();
+            loop {
+                let reader = input.read_sync();
+                for event in reader {
+                    let close = InputEvent::Keyboard(KeyEvent::Char('q')) == event;
+                    if let Err(_) = tx.send(Event::Input(event)) {
+                        return;
+                    }
+                    if close {
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
+    // Setup 250ms tick rate
+    {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            let tx = tx.clone();
+            loop {
+                tx.send(Event::Update).unwrap();
+                thread::sleep(Duration::from_millis(250));
+            }
+        });
+    }
+    rx
+}
+
 pub struct App {
-    store: Arc<Mutex<Store>>,
+    store: StoreHandle,
     focus: Focus,
 
     event_list: EventList,
-    thread_selector: ThreadSelector,
 
-    rect: Cell<Option<(Rect, Rect)>>,
+    rect: Cell<Option<Rect>>,
+    rx: mpsc::Receiver<Event>,
 }
 
 impl App {
-    pub fn new(store: Arc<Mutex<Store>>) -> App {
-        App {
+    pub fn new(store: StoreHandle) -> Result<App, failure::Error> {
+        Ok(App {
             store,
-            focus: Focus::ThreadSelector,
+            focus: Focus::Events,
 
             event_list: EventList::new(),
-            thread_selector: ThreadSelector::new(),
 
             rect: Cell::new(None),
+            rx: setup_input_handling(),
+        })
+    }
+
+    pub fn run(&mut self) -> Result<(), failure::Error> {
+        let backend = CrosstermBackend::new();
+        RawScreen::into_raw_mode()?.disable_drop();
+        let mut terminal = Terminal::new(backend)?;
+        terminal.hide_cursor()?;
+        terminal.clear()?;
+        loop {
+            let draw = match self.rx.recv()? {
+                Event::Input(event) => {
+                    if let Some(redraw) = self.input(event) {
+                        redraw
+                    } else {
+                        break;
+                    }
+                }
+                Event::Update => self.update(),
+            };
+            if draw {
+                terminal.draw(|mut f| {
+                    self.render_to(&mut f);
+                })?;
+            }
         }
+        terminal.clear()?;
+        Ok(())
     }
 
     pub fn update(&mut self) -> bool {
-        let store = self.store.lock().unwrap();
+        let store = self.store.0.lock().unwrap();
         if store.updated() {
-            let thread_list = self.thread_selector.update(&store);
-            let event_list = self
-                .event_list
-                .update(&store, self.thread_selector.current_thread());
+            let event_list = self.event_list.update(&store);
 
-            let rerender = thread_list || event_list;
+            let rerender = event_list;
             rerender
         } else {
             false
@@ -58,36 +125,25 @@ impl App {
 
     fn on_up(&mut self) -> bool {
         match self.focus {
-            Focus::ThreadSelector => self.thread_selector.on_up(),
             Focus::Events => self.event_list.on_up(),
         }
     }
 
     fn on_down(&mut self) -> bool {
         match self.focus {
-            Focus::ThreadSelector => self.thread_selector.on_down(),
             Focus::Events => self.event_list.on_down(),
         }
-    }
-
-    fn focus_thread(&mut self) -> bool {
-        let rerender = self.focus != Focus::ThreadSelector;
-        self.focus = Focus::ThreadSelector;
-        self.thread_selector.set_focused(true);
-        self.event_list.set_focused(false);
-        rerender
     }
 
     fn focus_event(&mut self) -> bool {
         let rerender = self.focus != Focus::Events;
         self.focus = Focus::Events;
-        self.thread_selector.set_focused(false);
         self.event_list.set_focused(true);
         rerender
     }
 
     fn on_left(&mut self) -> bool {
-        self.focus_thread()
+        false
     }
 
     fn on_right(&mut self) -> bool {
@@ -107,17 +163,13 @@ impl App {
             },
             InputEvent::Mouse(event) => match event {
                 MouseEvent::Release(x, y) => {
-                    let (thread_rect, event_rect) = self.rect.get().unwrap_or_default();
-                    if thread_rect.hit(x, y) {
-                        let rerender = self.focus_thread();
-                        self.thread_selector.on_click(x, y);
-                        rerender
-                    } else if event_rect.hit(x, y) {
+                    let event_rect = self.rect.get().unwrap_or_default();
+                    if event_rect.hit(x, y) {
                         let rerender = self.focus_event();
                         self.event_list.on_click(x, y);
                         rerender
                     } else {
-                        panic!("Event was wrongly routed")
+                        false
                     }
                 }
                 _ => false,
@@ -127,7 +179,7 @@ impl App {
         Some(redraw)
     }
 
-    pub fn render_to(&self, f: &mut Frame<CrosstermBackend>) {
+    pub fn render_to(&mut self, f: &mut Frame<CrosstermBackend>) {
         let mut rect = f.size();
         let mut legend_rect = rect;
         // Reserve space for legend
@@ -135,19 +187,12 @@ impl App {
         legend_rect.y += legend_rect.height - 1;
         legend_rect.height = 1;
 
-        let chunks = Layout::default()
-            .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
-            .direction(Direction::Horizontal)
-            .split(rect);
-
-        self.thread_selector.render_to(f, chunks[0]);
-        self.event_list
-            .render_to(f, chunks[1], self.thread_selector.current_thread());
+        self.event_list.render_to(f, rect);
         Paragraph::new([Text::raw(" q: close, ← → ↑ ↓ click: navigate")].iter())
             .render(f, legend_rect);
         Paragraph::new([Text::raw("prerelease version ")].iter())
             .alignment(Alignment::Right)
             .render(f, legend_rect);
-        self.rect.set(Some((chunks[0], chunks[1])));
+        self.rect.set(Some(rect));
     }
 }

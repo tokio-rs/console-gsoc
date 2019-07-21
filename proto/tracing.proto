@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package tracing;
+
+service ConsoleForwarder {
+  rpc Listen(ListenRequest) returns (stream ListenResponse) {}
+}
+
+message ListenRequest {}
+
+message ListenResponse {
+  oneof variant {
+    NewSpan newSpan = 1;
+    Record record = 2;
+    RecordFollowsFrom follows = 3;
+    Event event = 4;
+  }
+}
+
+/*
+ * Subscriber events
+ *
+ * Enter/Exit/Clone/Drop Span are only tracked within the subscriber.
+ * The console has no interest in these events, so they are not transmitted.
+ */
+
+message NewSpan {
+  Attributes attributes = 1;
+  SpanId span = 2;
+  Timestamp timestamp = 3;
+}
+
+message Record {
+  SpanId span = 1;
+  repeated Value values = 2;
+  ThreadId thread = 3;
+  Timestamp timestamp = 4;
+}
+
+message RecordFollowsFrom {
+  SpanId span = 1;
+  SpanId follows = 2;
+}
+
+message Event {
+  SpanId span = 1;
+  repeated Value values = 2;
+  repeated Field fields = 3;
+  Metadata metadata = 4;
+  bool is_root = 5;
+  bool is_contextual = 6;
+  SpanId parent = 7;
+  ThreadId thread = 8;
+  Timestamp timestamp = 9;
+}
+
+// Wrapper types
+
+message LineNum { uint32 num = 1; }
+
+message SpanId { uint64 id = 1; }
+
+message ThreadId { uint64 id = 1; }
+
+message Timestamp { int64 nano = 1; }
+
+message DebugRecord {
+  string debug = 1;
+  string pretty = 2;
+}
+
+// `tracing` data types
+
+message Field { string name = 1; }
+
+enum Level {
+  ERROR = 0;
+  WARN = 1;
+  INFO = 2;
+  DEBUG = 3;
+  TRACE = 5;
+}
+
+message Metadata {
+  repeated Field fieldset = 1;
+  Level level = 2;
+  string name = 3;
+  string target = 4;
+  string module_path = 5;
+  string file = 6;
+  LineNum line = 7;
+  bool is_event = 8;
+  bool is_span = 9;
+}
+
+message Value {
+  Field field = 1;
+  oneof value {
+    int64 signed = 2;
+    uint64 unsigned = 3;
+    bool boolean = 4;
+    string str = 5;
+    DebugRecord debug = 6;
+  }
+}
+
+message Attributes {
+  Metadata metadata = 1;
+  repeated Value values = 2;
+  bool is_root = 3;
+  bool is_contextual = 4;
+  SpanId parent = 5;
+}
