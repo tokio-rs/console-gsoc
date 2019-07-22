@@ -128,7 +128,7 @@ impl Store {
         let span = self.id_map[&record
             .span
             .as_ref()
-            .expect("BUG: No id set on follows.span")
+            .expect("BUG: No id set on record.span")
             .id];
         self.spans[span.0].records.push(record);
     }
