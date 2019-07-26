@@ -7,12 +7,13 @@ use crossbeam::channel::Sender;
 
 use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, Once};
+use std::sync::{Arc, Once, RwLock};
 use std::thread;
 
 use chrono::prelude::*;
 
 use crate::messages::listen_response::Variant;
+use crate::messages::Recorder;
 use crate::*;
 
 static THREAD_COUNTER: AtomicUsize = AtomicUsize::new(1);
@@ -41,12 +42,12 @@ fn get_thread_id(console: &ConsoleForwarder) -> ThreadId {
 
 pub struct ConsoleForwarder {
     pub(crate) tx: Sender<Variant>,
-    pub(crate) registry: Arc<Mutex<crate::Registry>>,
+    pub(crate) registry: Arc<RwLock<crate::Registry>>,
 }
 
 impl ConsoleForwarder {
     fn register_thread_name(&self, id: ThreadId, name: String) {
-        self.registry.lock().unwrap().thread_names.insert(id, name);
+        self.registry.write().unwrap().thread_names.insert(id, name);
     }
 }
 
@@ -55,7 +56,9 @@ impl Subscriber for ConsoleForwarder {
         true
     }
     fn new_span(&self, span: &span::Attributes) -> span::Id {
-        let id = self.registry.lock().unwrap().new_id();
+        let id = self.registry.write().unwrap().new_id();
+        let mut rec = Recorder::default();
+        span.record(&mut rec);
         self.tx
             .send(Variant::NewSpan(messages::NewSpan {
                 attributes: Some(span.into()),
@@ -63,6 +66,7 @@ impl Subscriber for ConsoleForwarder {
                 timestamp: Some(messages::Timestamp {
                     nano: Utc::now().timestamp_nanos(),
                 }),
+                values: rec.0,
             }))
             .expect("BUG: No Backgroundthread");
 
@@ -99,15 +103,18 @@ impl Subscriber for ConsoleForwarder {
                 name: field.name().to_string(),
             })
             .collect();
+        let attributes = messages::Attributes {
+            is_contextual: event.is_contextual(),
+            is_root: event.is_root(),
+            metadata: Some(event.metadata().into()),
+            parent: event.parent().map(|p| p.into()),
+        };
         self.tx
             .send(Variant::Event(messages::Event {
                 span: STACK.with(|stack| stack.borrow().last().map(SpanId::as_message)),
                 values: recorder.0,
-                is_contextual: event.is_contextual(),
-                is_root: event.is_root(),
-                metadata: Some(event.metadata().into()),
-                parent: event.parent().map(|p| p.into()),
                 thread: Some(get_thread_id(self).into()),
+                attributes: Some(attributes),
                 fields,
                 timestamp: Some(messages::Timestamp {
                     nano: Utc::now().timestamp_nanos(),
@@ -128,15 +135,20 @@ impl Subscriber for ConsoleForwarder {
         }
     }
     fn clone_span(&self, id: &span::Id) -> span::Id {
-        self.registry.lock().unwrap().spans[SpanId::new(id.into_u64()).as_index()].refcount += 1;
+        let index = SpanId::new(id.into_u64()).as_index();
+        self.registry.read().unwrap().spans[index]
+            .refcount
+            .fetch_add(1, Ordering::SeqCst);
         id.clone()
     }
     fn drop_span(&self, ref id: span::Id) {
-        let mut registry = self.registry.lock().unwrap();
-        let span = &mut registry.spans[SpanId::new(id.into_u64()).as_index()];
-        span.refcount -= 1;
-        if span.refcount == 0 {
-            span.follows.clear();
+        let index = SpanId::new(id.into_u64()).as_index();
+        let old_count = try_lock!(self.registry.read()).spans[index]
+            .refcount
+            .fetch_sub(1, Ordering::SeqCst);
+        if old_count == 1 {
+            let mut registry = try_lock!(self.registry.write());
+            registry.spans[index].follows.clear();
 
             registry.reusable.push(SpanId::new(id.into_u64()));
         }

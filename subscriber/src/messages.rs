@@ -96,11 +96,8 @@ impl From<&'static tracing_core::Metadata<'static>> for Metadata {
 
 impl<'a> From<&'a span::Attributes<'a>> for Attributes {
     fn from(attr: &span::Attributes) -> Self {
-        let mut rec = Recorder::default();
-        attr.record(&mut rec);
         Attributes {
             metadata: Some(attr.metadata().into()),
-            values: rec.0,
             is_root: attr.is_root(),
             is_contextual: attr.is_contextual(),
             parent: attr.parent().map(|id| SpanId { id: id.into_u64() }),

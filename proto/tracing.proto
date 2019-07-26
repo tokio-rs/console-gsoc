@@ -28,6 +28,7 @@ message NewSpan {
   Attributes attributes = 1;
   SpanId span = 2;
   Timestamp timestamp = 3;
+  repeated Value values = 4;
 }
 
 message Record {
@@ -46,12 +47,9 @@ message Event {
   SpanId span = 1;
   repeated Value values = 2;
   repeated Field fields = 3;
-  Metadata metadata = 4;
-  bool is_root = 5;
-  bool is_contextual = 6;
-  SpanId parent = 7;
-  ThreadId thread = 8;
-  Timestamp timestamp = 9;
+  Attributes attributes = 4;
+  ThreadId thread = 5;
+  Timestamp timestamp = 6;
 }
 
 // Wrapper types
@@ -106,8 +104,7 @@ message Value {
 
 message Attributes {
   Metadata metadata = 1;
-  repeated Value values = 2;
-  bool is_root = 3;
-  bool is_contextual = 4;
-  SpanId parent = 5;
+  bool is_root = 2;
+  bool is_contextual = 3;
+  SpanId parent = 4;
 }

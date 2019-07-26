@@ -51,6 +51,22 @@
 //! # }
 //! ```
 
+// Borrowed from `tracing`
+
+#[macro_use]
+macro_rules! try_lock {
+    ($lock:expr) => {
+        try_lock!($lock, else return)
+    };
+    ($lock:expr, else $els:expr) => {
+        match $lock {
+            Ok(l) => l,
+            Err(_) if std::thread::panicking() => $els,
+            Err(_) => panic!("lock poisoned"),
+        }
+    };
+}
+
 mod messages;
 mod server;
 mod subscriber;
@@ -59,6 +75,7 @@ use tracing_core::span;
 
 use std::collections::HashMap;
 use std::num::NonZeroU64;
+use std::sync::atomic::AtomicUsize;
 
 pub use server::*;
 
@@ -73,7 +90,7 @@ impl From<ThreadId> for messages::ThreadId {
 
 #[derive(Debug)]
 pub struct Span {
-    refcount: usize,
+    refcount: AtomicUsize,
     follows: Vec<SpanId>,
 }
 
