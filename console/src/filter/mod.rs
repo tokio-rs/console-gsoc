@@ -103,3 +103,68 @@ impl Modifier {
         Modifier::FieldMatches { name, regex }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::storage::*;
+
+    fn event_entry() -> EventEntry {
+        let mut event = Event::default();
+        event.values.push(Value {
+            field: Some(Field {
+                name: "foo".to_string(),
+            }),
+            value: Some(value::Value::Str("barbazboz".to_string())),
+        });
+        EventEntry { span: None, event }
+    }
+
+    #[test]
+    fn modifier_equals() {
+        let entry = event_entry();
+
+        let doesnt_exist = Modifier::equals("blah".to_string(), "example".to_string());
+        assert_eq!(doesnt_exist.filter(&entry), None);
+
+        let not_equal = Modifier::equals("foo".to_string(), "example".to_string());
+        assert_eq!(not_equal.filter(&entry), Some(false));
+
+        let equals = Modifier::equals("foo".to_string(), "barbazboz".to_string());
+        assert_eq!(equals.filter(&entry), Some(true));
+    }
+
+    #[test]
+    fn modifier_contains() {
+        let entry = event_entry();
+
+        let not_contained = Modifier::contains("foo".to_string(), "example".to_string());
+        assert_eq!(not_contained.filter(&entry), Some(false));
+
+        let contained = Modifier::contains("foo".to_string(), "baz".to_string());
+        assert_eq!(contained.filter(&entry), Some(true));
+    }
+
+    #[test]
+    fn modifier_regex() {
+        let entry = event_entry();
+
+        let no_match = Modifier::matches("foo".to_string(), "example".to_string());
+        assert_eq!(no_match.filter(&entry), Some(false));
+
+        let matches = Modifier::matches("foo".to_string(), "b[aeiou]z".to_string());
+        assert_eq!(matches.filter(&entry), Some(true));
+    }
+
+    #[test]
+    fn modifier_starts_with() {
+        let entry = event_entry();
+
+        let no_match = Modifier::starts_with("foo".to_string(), "example".to_string());
+        assert_eq!(no_match.filter(&entry), Some(false));
+
+        let matches = Modifier::starts_with("foo".to_string(), "bar".to_string());
+        assert_eq!(matches.filter(&entry), Some(true));
+    }
+}
