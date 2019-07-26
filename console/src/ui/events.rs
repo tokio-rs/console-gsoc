@@ -1,5 +1,6 @@
 use crate::storage::*;
 
+use crate::filter::*;
 use crate::ui::{Hitbox, Input};
 
 use tui::backend::CrosstermBackend;
@@ -35,8 +36,13 @@ impl EventList {
         }
     }
 
-    pub(crate) fn update(&mut self, store: &Store) -> bool {
-        let logs = store.events().iter().cloned().collect();
+    pub(crate) fn update(&mut self, store: &Store, filter: &Filter) -> bool {
+        let logs = store
+            .events()
+            .iter()
+            .filter(|entry| filter.filter(entry))
+            .cloned()
+            .collect();
         let rerender = self.logs != logs;
         self.logs = logs;
         rerender
