@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{atomic::Ordering, Arc, RwLock};
 use std::thread;
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
@@ -31,13 +31,15 @@ impl Registry {
         self.reusable
             .pop()
             .map(|id| {
-                self.spans[id.as_index()].refcount += 1;
+                self.spans[id.as_index()]
+                    .refcount
+                    .fetch_add(1, Ordering::SeqCst);
                 id
             })
             .unwrap_or_else(|| {
                 let id = SpanId::new(self.spans.len() as u64 + 1);
                 self.spans.push(Span {
-                    refcount: 1,
+                    refcount: AtomicUsize::new(1),
                     follows: vec![],
                 });
                 id
@@ -50,7 +52,7 @@ impl Registry {
 pub struct BackgroundThreadHandle {
     sender: Sender<Variant>,
     tx_sender: Sender<Wait<mpsc::Sender<messages::ListenResponse>>>,
-    registry: Arc<Mutex<Registry>>,
+    registry: Arc<RwLock<Registry>>,
 }
 
 impl BackgroundThreadHandle {
@@ -83,7 +85,7 @@ impl BackgroundThreadHandle {
         BackgroundThreadHandle {
             sender: tx,
             tx_sender: txtx,
-            registry: Arc::new(Mutex::new(Registry::default())),
+            registry: Arc::default(),
         }
     }
 

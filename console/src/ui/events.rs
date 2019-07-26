@@ -107,7 +107,7 @@ impl EventList {
                 text.push_str(", ");
             }
             if let Some(field) = &value.field {
-                write!(text, r#"{}("#, field.name).unwrap();
+                write!(text, r#"{}(""#, field.name).unwrap();
                 match &value.value {
                     Some(value::Value::Signed(i)) => write!(text, "{}", i).unwrap(),
                     Some(value::Value::Unsigned(u)) => write!(text, "{}", u).unwrap(),

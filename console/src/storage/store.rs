@@ -67,7 +67,7 @@ pub struct EventEntry {
 
 impl EventEntry {
     pub fn level(&self) -> Option<Level> {
-        Level::from_i32(self.event.metadata.as_ref()?.level)
+        Level::from_i32(self.event.attributes.as_ref()?.metadata.as_ref()?.level)
     }
 }
 
