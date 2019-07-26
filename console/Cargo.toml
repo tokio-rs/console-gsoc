@@ -21,6 +21,7 @@ tower-hyper = "0.1"
 tower-grpc = { features = ["tower-hyper"], version = "0.1.0" }
 tower-service = "0.2"
 tower-util = "0.1"
+regex = "1.2.0"
 
 [dependencies.tui]
 version = "0.6"
