@@ -1,28 +1,31 @@
 use crate::storage::EventEntry;
+
 use std::fmt::{Display, Formatter, Result};
+
+use indexmap::IndexMap;
 
 use regex::Regex;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Filter {
     pub(crate) name: String,
-    pub(crate) modifier: Vec<Modifier>,
+    pub(crate) modifier: IndexMap<String, Modifier>,
 }
 
 impl Filter {
     pub(crate) fn insert_modifier(&mut self, modifier: Modifier) {
-        for (i, m) in self.modifier.iter().enumerate() {
-            if m.field_name() == modifier.field_name() {
-                self.modifier[i] = modifier;
-                return;
-            }
-        }
-        self.modifier.push(modifier);
+        self.modifier.insert(
+            modifier
+                .field_name()
+                .expect("BUG: No field name found!")
+                .to_string(),
+            modifier,
+        );
     }
 
     pub(crate) fn filter(&self, entry: &EventEntry) -> bool {
         self.modifier
-            .iter()
+            .values()
             .all(|m| m.filter(entry).unwrap_or(false))
     }
 }
@@ -70,19 +73,18 @@ impl Modifier {
         match self {
             Modifier::FieldStartsWith { name, value } => entry
                 .event
-                .greedy_by_name(name)
+                .any_by_name(name)
                 .map(|string| string.starts_with(value)),
-            Modifier::FieldEquals { name, value } => entry
-                .event
-                .greedy_by_name(name)
-                .map(|string| &string == value),
+            Modifier::FieldEquals { name, value } => {
+                entry.event.any_by_name(name).map(|string| &string == value)
+            }
             Modifier::FieldContains { name, value } => entry
                 .event
-                .greedy_by_name(name)
+                .any_by_name(name)
                 .map(|string| string.contains(value)),
             Modifier::FieldMatches { name, regex } => entry
                 .event
-                .greedy_by_name(name)
+                .any_by_name(name)
                 .and_then(|string| Regex::new(regex).ok().map(|re| re.is_match(&string))),
         }
     }

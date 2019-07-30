@@ -1,12 +1,20 @@
 use crate::filter::*;
+use std::str::FromStr;
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum Command {
     Event(Modifier),
 }
 
+impl FromStr for Command {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Command::from_str(s).ok_or(())
+    }
+}
+
 impl Command {
-    pub(crate) fn parse(string: &str) -> Option<Command> {
+    fn from_str(string: &str) -> Option<Command> {
         let command_end = string.find(char::is_whitespace)?;
         let (command_str, remaining) = string.split_at(command_end);
         match command_str {
@@ -15,7 +23,7 @@ impl Command {
         }
     }
 
-    fn parse_event<'s>(command: &str, remaining: &str) -> Option<Command> {
+    fn parse_event(command: &str, remaining: &str) -> Option<Command> {
         let mut segments = command.split('.');
         if !(segments.next() == Some("event") && segments.next() == Some("field")) {
             return None;
@@ -47,7 +55,7 @@ impl Command {
         Some(modifier_ty(fieldname, value))
     }
 
-    fn parse_string<'s>(string: &str) -> Option<String> {
+    fn parse_string(string: &str) -> Option<String> {
         let mut chars = string.chars();
         if string.len() < 2 || chars.next() != Some('"') || chars.last() != Some('"') {
             None?
@@ -79,8 +87,8 @@ mod tests {
     #[test]
     fn parse_command() {
         assert_eq!(
-            Command::parse(r#"event.field.message == "example""#),
-            Some(Command::Event(Modifier::equals(
+            r#"event.field.message == "example""#.parse(),
+            Ok(Command::Event(Modifier::equals(
                 "message".to_string(),
                 "example".to_string()
             )))
