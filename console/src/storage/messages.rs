@@ -41,7 +41,7 @@ impl Event {
             _ => None,
         }
     }
-    pub fn greedy_by_name(&self, name: &str) -> Option<String> {
+    pub fn any_by_name(&self, name: &str) -> Option<String> {
         Some(match self.value_by_name(name)? {
             value::Value::Str(string) => string.clone(),
             value::Value::Signed(i) => format!("{}", i),

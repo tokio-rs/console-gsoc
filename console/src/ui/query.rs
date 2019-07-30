@@ -1,5 +1,5 @@
 use crate::filter::*;
-use crate::ui::{Action, Command, Input};
+use crate::ui::{Action, Input};
 
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout, Rect};
@@ -7,6 +7,7 @@ use tui::style::{Color, Style};
 use tui::widgets::{Block, Borders, Paragraph, Text, Widget};
 use tui::Frame;
 
+use std::borrow::Cow;
 use std::cell::Cell;
 
 pub struct QueryView {
@@ -82,21 +83,21 @@ impl QueryView {
 
     pub(crate) fn render_to(&self, f: &mut Frame<CrosstermBackend>, r: Rect) {
         let (border_color, title_color) = self.border_color();
-        let help = [
-            Text::raw("Commands\n"),
-            Text::raw("> event.field.<name> <operator>\n"),
-            Text::raw("Operators\n"),
-            Text::raw("- == \"<string>\"\n"),
-            Text::raw("- contains \"<string>\"\n"),
-            Text::raw("- startsWith \"<string>\"\n"),
-            Text::raw("- matches \"<regex>\"\n"),
+        const HELP: [Text<'static>; 7] = [
+            Text::Raw(Cow::Borrowed("Commands\n")),
+            Text::Raw(Cow::Borrowed("> event.field.<name> <operator>\n")),
+            Text::Raw(Cow::Borrowed("Operators\n")),
+            Text::Raw(Cow::Borrowed("- == \"<string>\"\n")),
+            Text::Raw(Cow::Borrowed("- contains \"<string>\"\n")),
+            Text::Raw(Cow::Borrowed("- startsWith \"<string>\"\n")),
+            Text::Raw(Cow::Borrowed("- matches \"<regex>\"\n")),
         ];
         let chunks = Layout::default()
             .constraints(
                 [
                     Constraint::Length(3),
                     Constraint::Min(1),
-                    Constraint::Length(help.len() as u16 + 2),
+                    Constraint::Length(HELP.len() as u16 + 2),
                 ]
                 .as_ref(),
             )
@@ -120,7 +121,7 @@ impl QueryView {
         let items: Vec<Text<'_>> = if let Some(filter) = self.filter.as_ref() {
             filter
                 .modifier
-                .iter()
+                .values()
                 .map(|m| Text::raw(format!("{}\n", m)))
                 .collect::<Vec<Text<'_>>>()
         } else {
@@ -136,7 +137,7 @@ impl QueryView {
             )
             .render(f, chunks[1]);
 
-        Paragraph::new(help.into_iter())
+        Paragraph::new(HELP.iter())
             .block(
                 Block::default()
                     .title("Help")
@@ -148,7 +149,7 @@ impl QueryView {
     }
 
     fn handle_command(&mut self) -> Action {
-        let action = if let Some(command) = Command::parse(&self.buffer) {
+        let action = if let Ok(command) = self.buffer.parse() {
             Action::Command(command)
         } else {
             // Just issue redraw for cleared buffer
@@ -188,23 +189,22 @@ impl Input for QueryView {
         None
     }
     fn on_char(&mut self, c: char) -> Action {
-        self.rect
-            .get()
-            .filter(|rect| rect.width - 2 - 2 > self.buffer.len() as u16)
-            .map(|_| match c {
-                '\n' => self.handle_command(),
-                _ if self.last_char_is_whitespace() && c.is_whitespace() => {
-                    // We are at the start of a command
-                    // Or the last char is already a whitespace
-                    // Don't insert redudant whitespace
-                    Action::Nothing
-                }
-                _ => {
-                    self.buffer.push(c);
-                    Action::Redraw
-                }
-            })
-            .unwrap_or(Action::Nothing)
+        // We don't wrap the text
+        // Excess text can still be typed, just requires precision by the user
+        // TODO: Decide to implement moving cursor or adjust width of frame
+        match c {
+            '\n' => self.handle_command(),
+            _ if self.last_char_is_whitespace() && c.is_whitespace() => {
+                // We are at the start of a command
+                // Or the last char is already a whitespace
+                // Don't insert redudant whitespace
+                Action::Nothing
+            }
+            _ => {
+                self.buffer.push(c);
+                Action::Redraw
+            }
+        }
     }
     fn on_backspace(&mut self) -> bool {
         let rerender = self.buffer.len() != 0;
