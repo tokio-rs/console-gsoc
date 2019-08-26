@@ -1,4 +1,4 @@
-use std::sync::{atomic::Ordering, Arc, RwLock};
+use std::sync::{Arc, RwLock};
 use std::thread;
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
@@ -18,32 +18,48 @@ use tower_grpc::codegen::server::grpc::{Request, Response};
 
 use tokio::net::TcpListener;
 
+pub(crate) enum SpanState {
+    Active(Span),
+    Free { next_id: Option<SpanId> },
+}
+
+impl SpanState {
+    pub(crate) fn as_active(&self) -> Option<&Span> {
+        match self {
+            SpanState::Active(span) => Some(span),
+            SpanState::Free { .. } => None,
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct Registry {
-    pub spans: Vec<Span>,
-    pub reusable: Vec<SpanId>,
+    pub spans: Vec<SpanState>,
+    pub next_id: Option<SpanId>,
 
     pub thread_names: HashMap<ThreadId, String>,
 }
 
 impl Registry {
     pub(crate) fn new_id(&mut self) -> SpanId {
-        self.reusable
-            .pop()
-            .map(|id| {
-                self.spans[id.as_index()]
-                    .refcount
-                    .fetch_add(1, Ordering::SeqCst);
-                id
-            })
-            .unwrap_or_else(|| {
-                let id = SpanId::new(self.spans.len() as u64 + 1);
-                self.spans.push(Span {
-                    refcount: AtomicUsize::new(1),
-                    follows: vec![],
-                });
-                id
-            })
+        let span = SpanState::Active(Span {
+            refcount: AtomicUsize::new(1),
+            follows: vec![],
+        });
+        if let Some(id) = &self.next_id {
+            let old_span = std::mem::replace(&mut self.spans[id.as_index()], span);
+            match old_span {
+                SpanState::Free { next_id } => {
+                    let id = id.clone();
+                    std::mem::replace(&mut self.next_id, next_id);
+                    id
+                }
+                _ => unreachable!("BUG: next_id points to active span"),
+            }
+        } else {
+            self.spans.push(span);
+            SpanId::new(self.spans.len() as u64)
+        }
     }
 }
 

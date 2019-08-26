@@ -137,20 +137,24 @@ impl Subscriber for ConsoleForwarder {
     fn clone_span(&self, id: &span::Id) -> span::Id {
         let index = SpanId::new(id.into_u64()).as_index();
         self.registry.read().unwrap().spans[index]
+            .as_active()
+            .expect("SpanId points to active span")
             .refcount
             .fetch_add(1, Ordering::SeqCst);
         id.clone()
     }
     fn drop_span(&self, ref id: span::Id) {
-        let index = SpanId::new(id.into_u64()).as_index();
+        let span_id = SpanId::new(id.into_u64());
+        let index = span_id.as_index();
         let old_count = try_lock!(self.registry.read()).spans[index]
+            .as_active()
+            .expect("SpanId points to active span")
             .refcount
             .fetch_sub(1, Ordering::SeqCst);
         if old_count == 1 {
             let mut registry = try_lock!(self.registry.write());
-            registry.spans[index].follows.clear();
-
-            registry.reusable.push(SpanId::new(id.into_u64()));
+            let next_id = std::mem::replace(&mut registry.next_id, Some(span_id));
+            std::mem::replace(&mut registry.spans[index], SpanState::Free { next_id });
         }
     }
 }

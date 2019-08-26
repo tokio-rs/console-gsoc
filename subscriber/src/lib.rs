@@ -94,7 +94,7 @@ pub struct Span {
     follows: Vec<SpanId>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SpanId(NonZeroU64);
 
 impl SpanId {
