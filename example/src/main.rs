@@ -1,10 +1,17 @@
-use console_subscriber::*;
+use console_subscriber::tokio::GrpcEndpoint;
 
 use std::thread;
 use std::time::Duration;
 
+use tokio::prelude::*;
+use tokio::runtime::Runtime;
+
 fn main() {
-    let handle = BackgroundThreadHandle::new();
+    let mut rt = Runtime::new().unwrap();
+
+    let handle = rt.executor();
+
+    let handle = GrpcEndpoint::new(handle);
     let subscriber = handle.new_subscriber();
 
     thread::Builder::new()
@@ -21,5 +28,7 @@ fn main() {
             });
         })
         .expect("Couldn't start background thread");
-    handle.run_background("[::1]:50051").join().unwrap();
+
+    rt.spawn(handle.into_server("[::1]:50051"));
+    rt.shutdown_on_idle().wait().unwrap();
 }

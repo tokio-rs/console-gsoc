@@ -4,7 +4,7 @@ use std::thread;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 
 use crate::messages::listen_response::Variant;
-use crate::subscriber::*;
+use crate::threaded::*;
 use crate::*;
 
 use futures::sink::{Sink, Wait};
@@ -16,21 +16,7 @@ use tower_hyper::server::{Http, Server};
 
 use tower_grpc::codegen::server::grpc::{Request, Response};
 
-use tokio::net::TcpListener;
-
-pub(crate) enum SpanState {
-    Active(Span),
-    Free { next_id: Option<SpanId> },
-}
-
-impl SpanState {
-    pub(crate) fn as_active(&self) -> Option<&Span> {
-        match self {
-            SpanState::Active(span) => Some(span),
-            SpanState::Free { .. } => None,
-        }
-    }
-}
+use ::tokio::net::TcpListener;
 
 #[derive(Default)]
 pub(crate) struct Registry {
@@ -119,7 +105,7 @@ impl BackgroundThreadHandle {
                 }
 
                 let serve = server.serve_with(sock, http.clone());
-                tokio::spawn(serve.map_err(|_| {
+                ::tokio::spawn(serve.map_err(|_| {
                     // Ignore connection reset
                 }));
 
@@ -129,7 +115,7 @@ impl BackgroundThreadHandle {
     }
 
     pub fn run_background(self, addr: &'static str) -> thread::JoinHandle<()> {
-        thread::spawn(move || tokio::run(self.into_server(addr)))
+        thread::spawn(move || ::tokio::run(self.into_server(addr)))
     }
 
     pub fn new_subscriber(&self) -> ConsoleForwarder {

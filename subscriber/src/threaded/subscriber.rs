@@ -42,7 +42,7 @@ fn get_thread_id(console: &ConsoleForwarder) -> ThreadId {
 
 pub struct ConsoleForwarder {
     pub(crate) tx: Sender<Variant>,
-    pub(crate) registry: Arc<RwLock<crate::Registry>>,
+    pub(crate) registry: Arc<RwLock<super::Registry>>,
 }
 
 impl ConsoleForwarder {

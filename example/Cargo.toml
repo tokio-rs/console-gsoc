@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 tracing = "0.1"
 tracing-test = { git = "https://github.com/MSleepyPanda/tokio-trace-nursery", branch="beacon" }
+tokio = "0.1.22"
 
 [dependencies.console-subscriber]
 path = "../subscriber"
