@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, RwLock};
 
+use crate::future::*;
 use crate::messages::listen_response::Variant;
-use crate::tokio::*;
 use crate::*;
 
 use futures::sink::{Sink, Wait};
@@ -13,7 +13,7 @@ use tower_hyper::server::{Http, Server};
 
 use tower_grpc::codegen::server::grpc::{Request, Response};
 
-use ::tokio::{net::TcpListener, runtime::TaskExecutor};
+use tokio::net::TcpListener;
 
 #[derive(Default)]
 pub(crate) struct Registry {
@@ -52,24 +52,24 @@ pub struct GrpcEndpoint {
     sender: UnboundedSender<Variant>,
     tx: Arc<Mutex<Vec<Wait<UnboundedSender<messages::ListenResponse>>>>>,
 
-    handle: TaskExecutor,
-
-    registry: Arc<RwLock<crate::tokio::server::Registry>>,
+    registry: Arc<RwLock<crate::future::server::Registry>>,
 }
 
 impl GrpcEndpoint {
-    pub fn new(handle: TaskExecutor) -> GrpcEndpoint {
+    pub fn new() -> (
+        GrpcEndpoint,
+        impl Future<Item = (), Error = ()> + Send + Sync + 'static,
+    ) {
         let (sender, rx) = unbounded();
         let handle = GrpcEndpoint {
             sender,
-            handle,
             tx: Arc::default(),
             registry: Arc::default(),
         };
         let stream_tx = handle.tx.clone();
 
-        handle.handle.spawn(
-            rx.for_each(move |message| {
+        let future = rx
+            .for_each(move |message| {
                 let mut senders = stream_tx.lock().unwrap();
                 let mut closed = vec![];
                 for (i, sender) in senders.iter_mut().enumerate() {
@@ -87,12 +87,14 @@ impl GrpcEndpoint {
                 }
                 Ok(())
             })
-            .map_err(|_| {}),
-        );
-        handle
+            .map_err(|_| {});
+        (handle, future)
     }
 
-    pub fn into_server(self, addr: &str) -> impl Future<Item = (), Error = ()> {
+    pub fn into_server(
+        self,
+        addr: &str,
+    ) -> impl Future<Item = (), Error = ()> + Send + Sync + 'static {
         let service = messages::server::ConsoleForwarderServer::new(self);
         let mut server = Server::new(service);
         let http = Http::new().http2_only(true).clone();
@@ -106,7 +108,7 @@ impl GrpcEndpoint {
                 }
 
                 let serve = server.serve_with(sock, http.clone());
-                ::tokio::spawn(serve.map_err(|_| {
+                tokio::spawn(serve.map_err(|_| {
                     // Ignore connection reset
                 }));
 
@@ -125,7 +127,7 @@ impl GrpcEndpoint {
 
 impl messages::server::ConsoleForwarder for GrpcEndpoint {
     type ListenStream =
-        Box<dyn Stream<Item = messages::ListenResponse, Error = tower_grpc::Status> + Send>;
+        Box<dyn Stream<Item = messages::ListenResponse, Error = tower_grpc::Status> + Send + Sync>;
     type ListenFuture =
         futures::future::FutureResult<Response<Self::ListenStream>, tower_grpc::Status>;
 

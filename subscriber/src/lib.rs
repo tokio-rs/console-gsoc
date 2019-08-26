@@ -18,7 +18,7 @@ macro_rules! try_lock {
 
 mod messages;
 pub mod threaded;
-pub mod tokio;
+pub mod future;
 
 use tracing_core::span;
 

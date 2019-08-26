@@ -1,4 +1,4 @@
-use console_subscriber::tokio::GrpcEndpoint;
+use console_subscriber::future::GrpcEndpoint;
 
 use std::thread;
 use std::time::Duration;
@@ -7,12 +7,11 @@ use tokio::prelude::*;
 use tokio::runtime::Runtime;
 
 fn main() {
-    let mut rt = Runtime::new().unwrap();
-
-    let handle = rt.executor();
-
-    let handle = GrpcEndpoint::new(handle);
+    let (handle, future) = GrpcEndpoint::new();
     let subscriber = handle.new_subscriber();
+    
+    let mut rt = Runtime::new().unwrap();
+    rt.spawn(future);
 
     thread::Builder::new()
         .name("Server".to_string())
