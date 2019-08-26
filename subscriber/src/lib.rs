@@ -41,7 +41,6 @@ pub struct Span {
     follows: Vec<SpanId>,
 }
 
-
 pub(crate) enum SpanState {
     Active(Span),
     Free { next_id: Option<SpanId> },

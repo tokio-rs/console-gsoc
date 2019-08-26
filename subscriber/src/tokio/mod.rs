@@ -1,4 +1,3 @@
-
 //! The subscriber spawns two threads two manage the endpoint.
 //!
 //! When an application interacts with `tracing`, under the hood,
@@ -14,7 +13,7 @@
 //! The following information will not be send to the console, but tracked locally:
 //!  - `span.enter()/exit()`, tracked via Thread-Local-Storage.
 //!  - `span.clone()/` and dropping, currently involves a mutex access
-//!  
+//!
 //! # Thread overview:
 //!
 //! ```schematic,ignore
