@@ -13,7 +13,6 @@ use tower_hyper::server::{Http, Server};
 
 use tower_grpc::codegen::server::grpc::{Request, Response};
 
-use smallvec::SmallVec;
 use tokio::net::TcpListener;
 
 #[derive(Default)]
@@ -72,19 +71,15 @@ impl GrpcEndpoint {
         let future = rx
             .for_each(move |message| {
                 let mut senders = stream_tx.lock().unwrap();
-                let mut closed = SmallVec::<[usize; 4]>::new();
-                for (i, sender) in senders.iter_mut().enumerate() {
+                // Traverse in reverse order, to keep index valid during removal
+                for i in (0..senders.len()).rev() {
                     let response = messages::ListenResponse {
                         variant: Some(message.clone()),
                     };
-                    if sender.send(response).is_err() {
+                    if senders[i].send(response).is_err() {
                         // Connection reset, mark for removal
-                        closed.push(i);
+                        let _ = senders.remove(i);
                     }
-                }
-                // Traverse in reverse order, to keep index valid during removal
-                for &i in closed.iter().rev() {
-                    let _ = senders.remove(i);
                 }
                 Ok(())
             })

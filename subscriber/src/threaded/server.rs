@@ -68,19 +68,15 @@ impl BackgroundThreadHandle {
                     // TODO: Track and rebroadcast newspan information for live spans
                     senders.push(tx);
                 }
-                let mut closed = vec![];
-                for (i, sender) in senders.iter_mut().enumerate() {
+                // Traverse in reverse order, to keep index valid during removal
+                for i in (0..senders.len()).rev() {
                     let response = messages::ListenResponse {
                         variant: Some(message.clone()),
                     };
-                    if sender.send(response).is_err() {
+                    if senders[i].send(response).is_err() {
                         // Connection reset, mark for removal
-                        closed.push(i);
+                        let _ = senders.remove(i);
                     }
-                }
-                // Traverse in reverse order, to keep index valid during removal
-                for &i in closed.iter().rev() {
-                    let _ = senders.remove(i);
                 }
             }
         });

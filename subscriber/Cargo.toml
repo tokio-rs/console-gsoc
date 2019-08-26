@@ -20,7 +20,6 @@ tower-service = "0.2"
 tower-util = "0.1"
 tracing-core = "0.1"
 prost = "0.5.0"
-smallvec = "0.6.10"
 
 [build-dependencies]
 tower-grpc-build = { version = "0.1.0",  features = ["tower-hyper"]  }
