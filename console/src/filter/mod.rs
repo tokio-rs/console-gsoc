@@ -1,6 +1,9 @@
-use crate::storage::{messages, EventEntry, Span, Store};
+use crate::{
+    storage::{messages, EventEntry, Span, Store},
+    ui::command::Command,
+};
 
-use std::fmt::{Display, Formatter, Result};
+use std::fmt::{self, Display, Formatter};
 
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -103,6 +106,40 @@ impl Filter {
         }
         entries
     }
+
+    pub(crate) fn load(name: &str) -> Option<Filter> {
+        let statements = std::fs::read_to_string(format!("{}.txt", name)).ok()?;
+        let mut filter = Filter::default();
+        filter.name = name.to_string();
+        for line in statements.split("\n") {
+            if line.len() == 0 {
+                break;
+            }
+            match line.parse().ok()? {
+                Command::GroupBy(group_by) => filter.group_by = Some(group_by),
+                Command::Modifier(modifier) => filter.insert_modifier(modifier),
+                _ => None?,
+            }
+        }
+        Some(filter)
+    }
+
+    pub(crate) fn save(&self, name: &str) -> Option<()> {
+        let buffer = self.to_string();
+        std::fs::write(format!("{}.txt", name), buffer).ok()
+    }
+}
+
+impl Display for Filter {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if let Some(group_by) = &self.group_by {
+            write!(f, "{}\n", group_by)?;
+        }
+        for modifier in self.modifier.values() {
+            write!(f, "{}\n", modifier)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -162,7 +199,7 @@ impl SpanSelector {
 }
 
 impl Display for SpanCriterion {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             SpanCriterion::Field(name) => write!(f, "field.{}", name),
             SpanCriterion::Id => write!(f, "id"),
@@ -171,7 +208,7 @@ impl Display for SpanCriterion {
 }
 
 impl Display for SpanSelector {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             SpanSelector::SpanCriterion(crit) => write!(f, "{}", crit),
             SpanSelector::ParentByName { name, criterion } => {
@@ -182,7 +219,7 @@ impl Display for SpanSelector {
 }
 
 impl Display for GroupBy {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             GroupBy::Field(name) => write!(f, "event.group_by.field.{}", name),
             GroupBy::Span(selector) => write!(f, "event.group_by.span.{}", selector),
@@ -201,7 +238,7 @@ pub(crate) enum Modifier {
 }
 
 impl Display for Modifier {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Modifier::FieldContains { name, value } => {
                 write!(f, "event.field.{} contains \"{}\"", name, value)

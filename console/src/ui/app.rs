@@ -228,6 +228,13 @@ impl App {
                             self.filter.group(group_by);
                             self.filter_updated = true;
                         }
+                        Action::Command(Command::LoadFilter(name)) => {
+                            self.filter = Filter::load(&name).unwrap_or_default();
+                            self.filter_updated = true;
+                        }
+                        Action::Command(Command::SaveFilter(name)) => {
+                            self.filter.save(&name);
+                        }
                         _ => {}
                     }
                     redraw

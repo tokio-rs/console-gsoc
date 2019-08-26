@@ -5,6 +5,8 @@ use std::str::FromStr;
 pub(crate) enum Command {
     Modifier(Modifier),
     GroupBy(GroupBy),
+    LoadFilter(String),
+    SaveFilter(String),
 }
 
 impl FromStr for Command {
@@ -21,6 +23,8 @@ impl Command {
         let (command_str, remaining) = string.split_at(command_end);
         match command_str {
             _ if command_str.starts_with("event.") => Command::parse_event(command_str, remaining),
+            "load" => Some(Command::LoadFilter(remaining.to_string())),
+            "save" => Some(Command::SaveFilter(remaining.to_string())),
             _ => None,
         }
     }
