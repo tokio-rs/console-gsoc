@@ -9,7 +9,7 @@ use tokio::runtime::Runtime;
 fn main() {
     let (handle, future) = GrpcEndpoint::new();
     let subscriber = handle.new_subscriber();
-    
+
     let mut rt = Runtime::new().unwrap();
     rt.spawn(future);
 

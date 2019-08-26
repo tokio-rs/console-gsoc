@@ -16,15 +16,46 @@ macro_rules! try_lock {
     };
 }
 
+pub mod future;
 mod messages;
 pub mod threaded;
-pub mod future;
 
 use tracing_core::span;
 
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::num::NonZeroU64;
 use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::thread;
+
+static THREAD_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+thread_local! {
+    static THREAD_ID: Cell<usize> = Cell::new(0);
+
+    static STACK: RefCell<Vec<SpanId>> = RefCell::new(Vec::new());
+}
+
+fn get_thread_id(console: &impl ThreadNameRegister) -> ThreadId {
+    THREAD_ID.with(|id| {
+        let thread_id = id.get();
+        if thread_id == 0 {
+            let new_id = THREAD_COUNTER.fetch_add(1, Ordering::SeqCst);
+            if let Some(name) = thread::current().name() {
+                console.register_thread_name(ThreadId(new_id), name.to_string());
+            }
+            id.set(new_id);
+            ThreadId(new_id)
+        } else {
+            ThreadId(thread_id)
+        }
+    })
+}
+
+trait ThreadNameRegister {
+    fn register_thread_name(&self, id: ThreadId, name: String);
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq, Hash)]
 pub struct ThreadId(pub usize);

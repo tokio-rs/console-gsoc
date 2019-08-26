@@ -13,6 +13,7 @@ use tower_hyper::server::{Http, Server};
 
 use tower_grpc::codegen::server::grpc::{Request, Response};
 
+use smallvec::SmallVec;
 use tokio::net::TcpListener;
 
 #[derive(Default)]
@@ -34,7 +35,7 @@ impl Registry {
             match old_span {
                 SpanState::Free { next_id } => {
                     let id = id.clone();
-                    std::mem::replace(&mut self.next_id, next_id);
+                    self.next_id = next_id;
                     id
                 }
                 _ => unreachable!("BUG: next_id points to active span"),
@@ -71,7 +72,7 @@ impl GrpcEndpoint {
         let future = rx
             .for_each(move |message| {
                 let mut senders = stream_tx.lock().unwrap();
-                let mut closed = vec![];
+                let mut closed = SmallVec::<[usize; 4]>::new();
                 for (i, sender) in senders.iter_mut().enumerate() {
                     let response = messages::ListenResponse {
                         variant: Some(message.clone()),
