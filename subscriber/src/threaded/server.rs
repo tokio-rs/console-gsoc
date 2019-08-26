@@ -37,7 +37,7 @@ impl Registry {
             match old_span {
                 SpanState::Free { next_id } => {
                     let id = id.clone();
-                    std::mem::replace(&mut self.next_id, next_id);
+                    self.next_id = next_id;
                     id
                 }
                 _ => unreachable!("BUG: next_id points to active span"),

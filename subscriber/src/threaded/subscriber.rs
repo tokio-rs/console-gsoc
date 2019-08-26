@@ -136,8 +136,8 @@ impl Subscriber for ConsoleForwarder {
             .fetch_sub(1, Ordering::SeqCst);
         if old_count == 1 {
             let mut registry = try_lock!(self.registry.write());
-            let next_id = std::mem::replace(&mut registry.next_id, Some(span_id));
-            std::mem::replace(&mut registry.spans[index], SpanState::Free { next_id });
+            let next_id = registry.next_id.replace(span_id);
+            registry.spans[index] = SpanState::Free { next_id };
         }
     }
 }
