@@ -84,44 +84,42 @@ impl ValueContainer for Record {
     }
 }
 
-type V = value::Value;
-
-impl V {
-    pub fn from_u64(u: u64) -> V {
+impl value::Value {
+    pub fn from_u64(u: u64) -> value::Value {
         value::Value::Unsigned(u)
     }
 }
 
-impl Eq for V {}
+impl Eq for value::Value {}
 
-impl Ord for V {
+impl Ord for value::Value {
     fn cmp(&self, other: &Self) -> Ordering {
         // Unordered or wrongly ordered Values will be moved to the end
         self.partial_cmp(other).unwrap_or(Ordering::Greater)
     }
 }
 
-impl PartialOrd<V> for V {
+impl PartialOrd<value::Value> for value::Value {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (&self, &other) {
-            (V::Signed(s), V::Signed(o)) => s.partial_cmp(o),
-            (V::Unsigned(s), V::Unsigned(o)) => s.partial_cmp(o),
-            (V::Boolean(s), V::Boolean(o)) => s.partial_cmp(o),
-            (V::Str(s), V::Str(o)) => s.partial_cmp(o),
-            (V::Debug(s), V::Debug(o)) => s.debug.partial_cmp(&o.debug),
+            (value::Value::Signed(s), value::Value::Signed(o)) => s.partial_cmp(o),
+            (value::Value::Unsigned(s), value::Value::Unsigned(o)) => s.partial_cmp(o),
+            (value::Value::Boolean(s), value::Value::Boolean(o)) => s.partial_cmp(o),
+            (value::Value::Str(s), value::Value::Str(o)) => s.partial_cmp(o),
+            (value::Value::Debug(s), value::Value::Debug(o)) => s.debug.partial_cmp(&o.debug),
             _ => None,
         }
     }
 }
 
-impl Display for V {
+impl Display for value::Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            V::Unsigned(u) => write!(f, "{}", u),
-            V::Signed(s) => write!(f, "{}", s),
-            V::Boolean(b) => write!(f, "{}", b),
-            V::Str(s) => write!(f, "{}", s),
-            V::Debug(d) => write!(f, "{}", d.debug),
+            value::Value::Unsigned(u) => write!(f, "{}", u),
+            value::Value::Signed(s) => write!(f, "{}", s),
+            value::Value::Boolean(b) => write!(f, "{}", b),
+            value::Value::Str(s) => write!(f, "{}", s),
+            value::Value::Debug(d) => write!(f, "{}", d.debug),
         }
     }
 }
