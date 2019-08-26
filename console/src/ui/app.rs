@@ -264,7 +264,7 @@ impl App {
     pub fn render_to(&mut self, f: &mut Frame<CrosstermBackend>) {
         let mut rect = f.size();
         let mut legend_rect = rect;
-        
+
         // Reserve space for legend
         // TODO: Investigate offset
         rect.height -= 2;
