@@ -1,15 +1,70 @@
-use crate::storage::EventEntry;
+use crate::storage::{messages, EventEntry, Span, Store};
 
 use std::fmt::{Display, Formatter, Result};
 
 use indexmap::IndexMap;
+use itertools::Itertools;
 
+use messages::{value::Value, ValueContainer};
 use regex::Regex;
+
+#[derive(Clone, PartialEq)]
+pub(crate) enum Entries {
+    Grouped {
+        group_by: GroupBy,
+        groups: Vec<(Option<Value>, Entries)>,
+    },
+    Entries(Vec<usize>),
+}
+
+impl Entries {
+    pub fn len(&self) -> usize {
+        match self {
+            Entries::Entries(entries) => entries.len(),
+            Entries::Grouped { groups, .. } => {
+                groups
+                    .iter()
+                    .map(|(_, entries)| entries.len())
+                    .sum::<usize>()
+                    + 1
+            }
+        }
+    }
+
+    fn retain(&mut self, f: impl Fn(&usize) -> bool + Copy) {
+        match self {
+            Entries::Entries(vec) => vec.retain(f),
+            Entries::Grouped { groups, .. } => {
+                groups.iter_mut().for_each(|(_, entries)| entries.retain(f))
+            }
+        }
+    }
+
+    fn group(self, key: impl Fn(&usize) -> Option<Value> + Copy, group_by: GroupBy) -> Entries {
+        match self {
+            Entries::Grouped { .. } => unimplemented!("Nested groups are not yet supported"),
+            Entries::Entries(mut entries) => {
+                entries.sort_by_key(key);
+                let groups = entries
+                    .into_iter()
+                    .filter(|id| key(id).is_some())
+                    .group_by(key)
+                    .into_iter()
+                    .map(|(value, indices)| -> (Option<Value>, Entries) {
+                        (value, Entries::Entries(indices.collect()))
+                    })
+                    .collect();
+                Entries::Grouped { group_by, groups }
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Filter {
     pub(crate) name: String,
     pub(crate) modifier: IndexMap<String, Modifier>,
+    pub(crate) group_by: Option<GroupBy>,
 }
 
 impl Filter {
@@ -23,10 +78,115 @@ impl Filter {
         );
     }
 
-    pub(crate) fn filter(&self, entry: &EventEntry) -> bool {
-        self.modifier
-            .values()
-            .all(|m| m.filter(entry).unwrap_or(false))
+    pub(crate) fn group(&mut self, group_by: GroupBy) {
+        self.group_by = Some(group_by);
+    }
+
+    pub(crate) fn apply<'i>(&'i self, raw: &'i Store, mut entries: Entries) -> Entries {
+        entries.retain(|e| {
+            let event = &raw.events()[*e];
+            self.modifier
+                .values()
+                .all(|m| m.filter(event).unwrap_or(false))
+        });
+        if let Some(group_by) = &self.group_by {
+            entries = entries.group(
+                |e| {
+                    let event = &raw.events()[*e];
+                    match group_by {
+                        GroupBy::Field(name) => event.event.value_by_name(&name).cloned(),
+                        GroupBy::Span(selector) => selector.evaluate(raw, event),
+                    }
+                },
+                group_by.clone(),
+            );
+        }
+        entries
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum GroupBy {
+    Field(String),
+    Span(SpanSelector),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum SpanCriterion {
+    Field(String),
+    Id,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum SpanSelector {
+    SpanCriterion(SpanCriterion),
+    ParentByName {
+        name: String,
+        criterion: SpanCriterion,
+    },
+}
+
+impl SpanSelector {
+    fn evaluate(&self, store: &Store, entry: &EventEntry) -> Option<Value> {
+        let span_id = entry.span?;
+        let span = &store.spans()[span_id.0];
+        assert_eq!(span.id, span_id);
+        match self {
+            SpanSelector::ParentByName { name, criterion } => {
+                fn check_parent(
+                    store: &Store,
+                    span: &Span,
+                    name: &String,
+                    criterion: &SpanCriterion,
+                ) -> Option<Value> {
+                    let parent = &store.spans()[span.parent_id?.0];
+                    if &parent.span.attributes.as_ref()?.metadata.as_ref()?.name == name {
+                        match criterion {
+                            SpanCriterion::Field(field_name) => {
+                                parent.value_by_name(field_name).cloned()
+                            }
+                            SpanCriterion::Id => Some(Value::from_u64(parent.id.0 as u64)),
+                        }
+                    } else {
+                        check_parent(store, parent, name, criterion)
+                    }
+                }
+                check_parent(store, span, name, criterion)
+            }
+            SpanSelector::SpanCriterion(criterion) => match criterion {
+                SpanCriterion::Field(field_name) => span.value_by_name(field_name).cloned(),
+                SpanCriterion::Id => Some(Value::from_u64(span.id.0 as u64)),
+            },
+        }
+    }
+}
+
+impl Display for SpanCriterion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            SpanCriterion::Field(name) => write!(f, "field.{}", name),
+            SpanCriterion::Id => write!(f, "id"),
+        }
+    }
+}
+
+impl Display for SpanSelector {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            SpanSelector::SpanCriterion(crit) => write!(f, "{}", crit),
+            SpanSelector::ParentByName { name, criterion } => {
+                write!(f, r#"parent_by_name("{}").{}"#, name, criterion)
+            }
+        }
+    }
+}
+
+impl Display for GroupBy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            GroupBy::Field(name) => write!(f, "event.group_by.field.{}", name),
+            GroupBy::Span(selector) => write!(f, "event.group_by.span.{}", selector),
+        }
     }
 }
 
@@ -108,7 +268,7 @@ impl Modifier {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Modifier;
 
     use crate::storage::*;
 
