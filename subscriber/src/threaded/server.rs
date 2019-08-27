@@ -1,10 +1,10 @@
-use std::sync::{atomic::Ordering, Arc, RwLock};
+use std::sync::{Arc, RwLock};
 use std::thread;
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
 
 use crate::messages::listen_response::Variant;
-use crate::subscriber::*;
+use crate::threaded::*;
 use crate::*;
 
 use futures::sink::{Sink, Wait};
@@ -16,34 +16,36 @@ use tower_hyper::server::{Http, Server};
 
 use tower_grpc::codegen::server::grpc::{Request, Response};
 
-use tokio::net::TcpListener;
+use ::tokio::net::TcpListener;
 
 #[derive(Default)]
 pub(crate) struct Registry {
-    pub spans: Vec<Span>,
-    pub reusable: Vec<SpanId>,
+    pub spans: Vec<SpanState>,
+    pub next_id: Option<SpanId>,
 
     pub thread_names: HashMap<ThreadId, String>,
 }
 
 impl Registry {
     pub(crate) fn new_id(&mut self) -> SpanId {
-        self.reusable
-            .pop()
-            .map(|id| {
-                self.spans[id.as_index()]
-                    .refcount
-                    .fetch_add(1, Ordering::SeqCst);
-                id
-            })
-            .unwrap_or_else(|| {
-                let id = SpanId::new(self.spans.len() as u64 + 1);
-                self.spans.push(Span {
-                    refcount: AtomicUsize::new(1),
-                    follows: vec![],
-                });
-                id
-            })
+        let span = SpanState::Active(Span {
+            refcount: AtomicUsize::new(1),
+            follows: vec![],
+        });
+        if let Some(id) = &self.next_id {
+            let old_span = std::mem::replace(&mut self.spans[id.as_index()], span);
+            match old_span {
+                SpanState::Free { next_id } => {
+                    let id = id.clone();
+                    self.next_id = next_id;
+                    id
+                }
+                _ => unreachable!("BUG: next_id points to active span"),
+            }
+        } else {
+            self.spans.push(span);
+            SpanId::new(self.spans.len() as u64)
+        }
     }
 }
 
@@ -66,19 +68,15 @@ impl BackgroundThreadHandle {
                     // TODO: Track and rebroadcast newspan information for live spans
                     senders.push(tx);
                 }
-                let mut closed = vec![];
-                for (i, sender) in senders.iter_mut().enumerate() {
+                // Traverse in reverse order, to keep index valid during removal
+                for i in (0..senders.len()).rev() {
                     let response = messages::ListenResponse {
                         variant: Some(message.clone()),
                     };
-                    if sender.send(response).is_err() {
+                    if senders[i].send(response).is_err() {
                         // Connection reset, mark for removal
-                        closed.push(i);
+                        let _ = senders.remove(i);
                     }
-                }
-                // Traverse in reverse order, to keep index valid during removal
-                for &i in closed.iter().rev() {
-                    let _ = senders.remove(i);
                 }
             }
         });
@@ -103,7 +101,7 @@ impl BackgroundThreadHandle {
                 }
 
                 let serve = server.serve_with(sock, http.clone());
-                tokio::spawn(serve.map_err(|_| {
+                ::tokio::spawn(serve.map_err(|_| {
                     // Ignore connection reset
                 }));
 
@@ -113,7 +111,7 @@ impl BackgroundThreadHandle {
     }
 
     pub fn run_background(self, addr: &'static str) -> thread::JoinHandle<()> {
-        thread::spawn(move || tokio::run(self.into_server(addr)))
+        thread::spawn(move || ::tokio::run(self.into_server(addr)))
     }
 
     pub fn new_subscriber(&self) -> ConsoleForwarder {

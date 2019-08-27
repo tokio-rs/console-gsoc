@@ -1,55 +1,4 @@
 //! A remote endpoint for `tracing-console`
-//!
-//! The subscriber currently spawns two threads two manage the endpoint.
-//!
-//! When an application interacts with `tracing`, under the hood,
-//! the current subscriber is called.
-//! This happens, for example, when a span is created (`span!(...)`)
-//! or an event is issued (`warn!("Cookies are empty")`).
-//!
-//! Those calls get translated to a message and sent to an aggregator thread.
-//! This aggregator thread then passes those messages to a network thread,
-//! which communicates with the client/console.
-//!
-//! # Network
-//! The following information will not be send to the console, but tracked locally:
-//!  - `span.enter()/exit()`, tracked via Thread-Local-Storage.
-//!  - `span.clone()/` and dropping, currently involves a mutex access
-//!  
-//! # Thread overview:
-//!
-//! ```schematic,ignore
-//! ┌──────────────────┐ span!(...) ┌───────────────────┐
-//! │Application Thread│----------->│                   │
-//! └──────────────────┘            │                   │
-//! ┌──────────────────┐ warn!(...) │                   │      ┌──────────────────┐
-//! │Application Thread│----------->│ Aggregator Thread │----->│  Network Thread  │
-//! └──────────────────┘            │                   │      └──────────────────┘
-//! ┌──────────────────┐ debug!(..) │                   │
-//! │Application Thread│----------->│                   │
-//! └──────────────────┘            └───────────────────┘
-//! ```
-//!
-//! # Usage
-//!
-//! ```rust,ignore
-//! # fn main() {
-//! use console_subscriber::BackgroundThreadHandle;
-//! use std::thread;
-//!
-//! let handle = BackgroundThreadHandle::new();
-//! let subscriber = handle.new_subscriber();
-//! std::thread::spawn(|| {
-//!     tracing::subscriber::with_default(subscriber, || {
-//!         use tracing::{event, Level};
-//!
-//!         event!(Level::INFO, "something has happened!");
-//!     });
-//! });
-//!
-//! handle.run_background("[::1]:50051").join().unwrap();
-//! # }
-//! ```
 
 // Borrowed from `tracing`
 
@@ -67,17 +16,46 @@ macro_rules! try_lock {
     };
 }
 
+pub mod future;
 mod messages;
-mod server;
-mod subscriber;
+pub mod threaded;
 
 use tracing_core::span;
 
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::num::NonZeroU64;
 use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::thread;
 
-pub use server::*;
+static THREAD_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+thread_local! {
+    static THREAD_ID: Cell<usize> = Cell::new(0);
+
+    static STACK: RefCell<Vec<SpanId>> = RefCell::new(Vec::new());
+}
+
+fn get_thread_id(console: &impl ThreadNameRegister) -> ThreadId {
+    THREAD_ID.with(|id| {
+        let thread_id = id.get();
+        if thread_id == 0 {
+            let new_id = THREAD_COUNTER.fetch_add(1, Ordering::SeqCst);
+            if let Some(name) = thread::current().name() {
+                console.register_thread_name(ThreadId(new_id), name.to_string());
+            }
+            id.set(new_id);
+            ThreadId(new_id)
+        } else {
+            ThreadId(thread_id)
+        }
+    })
+}
+
+trait ThreadNameRegister {
+    fn register_thread_name(&self, id: ThreadId, name: String);
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq, Hash)]
 pub struct ThreadId(pub usize);
@@ -94,7 +72,21 @@ pub struct Span {
     follows: Vec<SpanId>,
 }
 
-#[derive(Debug)]
+pub(crate) enum SpanState {
+    Active(Span),
+    Free { next_id: Option<SpanId> },
+}
+
+impl SpanState {
+    pub(crate) fn as_active(&self) -> Option<&Span> {
+        match self {
+            SpanState::Active(span) => Some(span),
+            SpanState::Free { .. } => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct SpanId(NonZeroU64);
 
 impl SpanId {
