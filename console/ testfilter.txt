@@ -1,0 +1,2 @@
+event.group_by.span.id
+event.field.shaved == "true"

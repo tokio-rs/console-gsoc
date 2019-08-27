@@ -48,15 +48,26 @@ impl Store {
 
 /// See `Store` documentation
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct InternalId(usize);
+pub struct InternalId(pub usize);
 
 #[derive(Debug)]
 pub struct Span {
-    id: InternalId,
-    span: NewSpan,
+    pub id: InternalId,
+    pub span: NewSpan,
+    pub parent_id: Option<InternalId>,
 
     records: Vec<Record>,
     follows: Vec<SpanId>,
+}
+
+impl ValueContainer for Span {
+    fn value_by_name(&self, name: &str) -> Option<&value::Value> {
+        self.span.value_by_name(name).or_else(|| {
+            self.records
+                .iter()
+                .find_map(|record| record.value_by_name(name))
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -102,10 +113,17 @@ impl Store {
                 .id,
             InternalId(self.id_counter),
         );
+        let parent_id = span
+            .attributes
+            .as_ref()
+            .and_then(|attrs: &Attributes| attrs.parent.as_ref())
+            .and_then(|id| self.id_map.get(&id.id))
+            .cloned();
 
         self.spans.push(Span {
             id: InternalId(self.id_counter),
             span,
+            parent_id,
             records: vec![],
             follows: vec![],
         });

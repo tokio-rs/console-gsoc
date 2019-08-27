@@ -22,7 +22,7 @@ jobs:
 - template: ci/cargo-check.yml
   parameters:
     name: minrust
-    rust_version: 1.31.0 # The 2018 edition
+    rust_version: 1.37.0
     displayName: Check rust min ver
 
 ################
