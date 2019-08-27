@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 bytes = "0.4"
 crossbeam = "0.7.1"
-crossterm = "^0.9"
+crossterm = "0.10"
 failure = "0.1.5"
 futures = "0.1"
 http = "0.1"
@@ -23,6 +23,7 @@ tower-service = "0.2"
 tower-util = "0.1"
 regex = "1.2.0"
 indexmap = "1.0.2"
+itertools = "0.8.0"
 
 [dependencies.tui]
 version = "0.6"

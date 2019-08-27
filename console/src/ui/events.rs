@@ -12,9 +12,197 @@ use tui::Frame;
 use std::cell::Cell;
 use std::fmt::Write;
 
+#[derive(Debug, Default)]
+struct DelimittedString {
+    buffer: String,
+    delimiter: &'static str,
+
+    first: bool,
+}
+
+impl DelimittedString {
+    fn new(delimiter: &'static str) -> DelimittedString {
+        DelimittedString {
+            buffer: String::new(),
+            delimiter,
+
+            first: true,
+        }
+    }
+
+    fn delimiter(&mut self) {
+        if self.first {
+            self.first = false;
+        } else {
+            self.buffer.push_str(self.delimiter);
+        }
+    }
+
+    fn write_value(&mut self, value: &Option<value::Value>) {
+        match value {
+            Some(value::Value::Signed(i)) => write!(self.buffer, "{}", i).unwrap(),
+            Some(value::Value::Unsigned(u)) => write!(self.buffer, "{}", u).unwrap(),
+            Some(value::Value::Boolean(b)) => write!(self.buffer, "{}", b).unwrap(),
+            Some(value::Value::Str(s)) => write!(self.buffer, "{}", s).unwrap(),
+            Some(value::Value::Debug(d)) => write!(self.buffer, "{}", d.debug).unwrap(),
+            None => {}
+        }
+    }
+
+    fn newline(mut self) -> String {
+        self.buffer.push('\n');
+        self.buffer
+    }
+}
+
+struct Formatter<'s> {
+    store: &'s Store,
+    entries: &'s Entries,
+
+    indentation_level: usize,
+
+    counter: usize,
+
+    length: u16,
+    offset: usize,
+    selection: usize,
+}
+
+impl<'s> Formatter<'s> {
+    fn entries(store: &'s Store, entries: &'s Entries) -> Formatter<'s> {
+        Formatter {
+            store,
+            entries,
+
+            indentation_level: 0,
+
+            counter: 0,
+
+            length: std::u16::MAX,
+            selection: 0,
+            offset: 0,
+        }
+    }
+
+    fn offset(&mut self, offset: usize) {
+        self.offset = offset
+    }
+
+    fn length(&mut self, length: u16) {
+        self.length = length
+    }
+
+    fn selection(&mut self, selection: usize) {
+        self.selection = selection;
+    }
+
+    fn style(mut self) -> Vec<Text<'static>> {
+        let mut buffer = Vec::with_capacity(2 * self.length as usize);
+        self.style_entries(&mut buffer, self.entries);
+        buffer
+    }
+
+    fn style_entries(&mut self, buffer: &mut Vec<Text<'_>>, entries: &Entries) {
+        match entries {
+            Entries::Entries(entries) => {
+                for &event in entries {
+                    // Skip/break if event is outside viewport
+                    if self.counter < self.offset {
+                        continue;
+                    }
+                    if self.counter >= self.offset + self.length as usize {
+                        break;
+                    }
+                    self.style_event(buffer, event);
+                    self.counter += 1;
+                }
+            }
+            Entries::Grouped { group_by, groups } => {
+                self.indentation_level += 1;
+                for (value, entries) in groups {
+                    // Skip/break if event is outside viewport
+                    if self.counter < self.offset {
+                        continue;
+                    }
+                    if self.counter >= self.offset + self.length as usize {
+                        break;
+                    }
+                    if let Some(value) = value {
+                        buffer.push(Text::raw(format!("{} == {}\n", group_by, value)));
+                    } else {
+                        buffer.push(Text::raw(format!("{} == None\n", group_by)));
+                    }
+                    self.counter += 1;
+                    self.style_entries(buffer, entries)
+                }
+                self.indentation_level -= 1;
+            }
+        }
+    }
+
+    fn style_level(level: Option<Level>, indentation: usize) -> Text<'static> {
+        let mut base = " ".repeat(indentation);
+        let style = match level {
+            None => {
+                base.push_str(" NONE ");
+                Style::default().fg(Color::White)
+            }
+            Some(Level::Info) => {
+                base.push_str(" INFO ");
+                Style::default().fg(Color::White)
+            }
+            Some(Level::Debug) => {
+                base.push_str("DEBUG ");
+                Style::default().fg(Color::LightCyan)
+            }
+            Some(Level::Error) => {
+                base.push_str("ERROR ");
+                Style::default().fg(Color::Red)
+            }
+            Some(Level::Trace) => {
+                base.push_str("TRACE ");
+                Style::default().fg(Color::Green)
+            }
+            Some(Level::Warn) => {
+                base.push_str(" WARN ");
+                Style::default().fg(Color::Yellow)
+            }
+        };
+        Text::styled(base, style)
+    }
+
+    fn style_event(&self, buffer: &mut Vec<Text<'_>>, i: usize) {
+        let entry = &self.store.events()[i];
+        let level = Formatter::style_level(entry.level(), self.indentation_level);
+        buffer.push(level);
+
+        let mut text = DelimittedString::new(", ");
+
+        for value in &entry.event.values {
+            text.delimiter();
+            if let Some(field) = &value.field {
+                write!(text.buffer, r#"{}(""#, field.name).unwrap();
+                text.write_value(&value.value);
+                text.buffer.push_str(r#"")"#);
+            }
+        }
+
+        let text = text.newline();
+        let is_selected = self.counter == self.selection - self.offset;
+        let text = if is_selected {
+            Text::styled(text, Style::default().modifier(Modifier::BOLD))
+        } else {
+            Text::raw(text)
+        };
+        buffer.push(text);
+    }
+}
+
 pub struct EventList {
     /// Cached rows, gets populated by `EventList::update`
-    logs: Vec<EventEntry>,
+    logs: Entries,
+    /// Cached text items, gets populated by `EventList::update`
+    text: Vec<Text<'static>>,
     /// Index into logs vec, indicates which row the user selected
     selection: usize,
     /// How far the frame is offset by scrolling
@@ -28,7 +216,8 @@ impl EventList {
     pub(crate) fn new() -> EventList {
         EventList {
             focused: false,
-            logs: Vec::new(),
+            logs: Entries::Entries(Vec::new()),
+            text: Vec::new(),
 
             selection: 0,
             offset: 0,
@@ -37,13 +226,23 @@ impl EventList {
     }
 
     pub(crate) fn update(&mut self, store: &Store, filter: &Filter) -> bool {
-        let logs = store
-            .events()
-            .iter()
-            .filter(|entry| filter.filter(entry))
-            .cloned()
-            .collect();
+        let entries = (0..store.events().len()).collect();
+        let logs = filter.apply(store, Entries::Entries(entries));
         let rerender = self.logs != logs;
+        // TODO: Smarter checks, this rerenders even if change is outside viewport
+        if rerender {
+            let mut formatter = Formatter::entries(store, &self.logs);
+            formatter.selection(self.selection);
+            formatter.length(
+                self.rect
+                    .get()
+                    .as_ref()
+                    .map(|rect| rect.height - 2)
+                    .unwrap_or(0),
+            );
+            formatter.offset(self.offset);
+            self.text = formatter.style();
+        }
         self.logs = logs;
         rerender
     }
@@ -95,48 +294,10 @@ impl EventList {
         self.adjust_window_to_selection() || rerender
     }
 
-    fn style_event(&self, i: usize, entry: &EventEntry) -> Vec<Text<'_>> {
-        let level = match entry.level() {
-            None => Text::styled(" NONE ", Style::default().fg(Color::White)),
-            Some(Level::Info) => Text::styled(" INFO ", Style::default().fg(Color::White)),
-            Some(Level::Debug) => Text::styled("DEBUG ", Style::default().fg(Color::LightCyan)),
-            Some(Level::Error) => Text::styled("ERROR ", Style::default().fg(Color::Red)),
-            Some(Level::Trace) => Text::styled("TRACE ", Style::default().fg(Color::Green)),
-            Some(Level::Warn) => Text::styled(" WARN ", Style::default().fg(Color::Yellow)),
-        };
-        let mut text = String::new();
-        let mut first = true;
-        for value in &entry.event.values {
-            if first {
-                first = false;
-            } else {
-                text.push_str(", ");
-            }
-            if let Some(field) = &value.field {
-                write!(text, r#"{}(""#, field.name).unwrap();
-                match &value.value {
-                    Some(value::Value::Signed(i)) => write!(text, "{}", i).unwrap(),
-                    Some(value::Value::Unsigned(u)) => write!(text, "{}", u).unwrap(),
-                    Some(value::Value::Boolean(b)) => write!(text, "{}", b).unwrap(),
-                    Some(value::Value::Str(s)) => write!(text, "{}", s).unwrap(),
-                    Some(value::Value::Debug(d)) => write!(text, "{}", d.debug).unwrap(),
-                    None => {}
-                }
-                text.push_str(r#"")"#);
-            }
-        }
-        text.push('\n');
-        if i == self.selection - self.offset {
-            vec![
-                level,
-                Text::styled(text, Style::default().modifier(Modifier::BOLD)),
-            ]
-        } else {
-            vec![level, Text::raw(text)]
-        }
-    }
-
-    pub(crate) fn render_to(&self, f: &mut Frame<CrosstermBackend>, r: Rect) {
+    pub(crate) fn render_to(&self, f: &mut Frame<CrosstermBackend>, mut r: Rect) {
+        // TODO: Investigate this offset
+        // Necessary because something overflows the border line, moving the corner onto the next
+        r.width -= 1;
         self.rect.set(Some(r));
         // - 2: Upper and lower border of window
         let rowcount = r.height as usize - 2;
@@ -148,25 +309,15 @@ impl EventList {
             self.offset + std::cmp::min(rowcount, self.logs.len()),
             self.logs.len(),
         );
-        Paragraph::new(
-            self.logs
-                .iter()
-                .skip(self.offset)
-                .take(rowcount)
-                .enumerate()
-                .map(|(i, e)| self.style_event(i, e))
-                .flatten()
-                .collect::<Vec<Text<'_>>>()
-                .iter(),
-        )
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(border_color))
-                .title(&block_title)
-                .title_style(Style::default().fg(title_color)),
-        )
-        .render(f, r);
+        Paragraph::new(self.text.iter())
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(border_color))
+                    .title(&block_title)
+                    .title_style(Style::default().fg(title_color)),
+            )
+            .render(f, r);
     }
 }
 

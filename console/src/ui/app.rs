@@ -220,8 +220,12 @@ impl App {
                     let action = self.on_char(c);
                     let redraw = action.redraw();
                     match action {
-                        Action::Command(Command::Event(modifier)) => {
+                        Action::Command(Command::Modifier(modifier)) => {
                             self.filter.insert_modifier(modifier);
+                            self.filter_updated = true;
+                        }
+                        Action::Command(Command::GroupBy(group_by)) => {
+                            self.filter.group(group_by);
                             self.filter_updated = true;
                         }
                         _ => {}
@@ -260,8 +264,10 @@ impl App {
     pub fn render_to(&mut self, f: &mut Frame<CrosstermBackend>) {
         let mut rect = f.size();
         let mut legend_rect = rect;
+
         // Reserve space for legend
-        rect.height -= 1;
+        // TODO: Investigate offset
+        rect.height -= 2;
         legend_rect.y += legend_rect.height - 1;
         legend_rect.height = 1;
 
@@ -272,11 +278,13 @@ impl App {
 
         self.query_view.render_to(f, chunks[0]);
         self.event_list.render_to(f, chunks[1]);
-        Paragraph::new([Text::raw(" q: close, ← → ↑ ↓ click: navigate")].iter())
+
+        Paragraph::new([Text::raw(" ESC: close, ← → ↑ ↓ click: navigate")].iter())
             .render(f, legend_rect);
         Paragraph::new([Text::raw("prerelease version ")].iter())
             .alignment(Alignment::Right)
             .render(f, legend_rect);
+
         self.rect.set(Some((chunks[0], chunks[1])));
     }
 }
